@@ -69,8 +69,7 @@ bash install.bash --wheel --from <verified SDK archive> --no-sudo    # optional,
 
 ## Step 7: record and tag (only when asked)
 
-Update the Status section of PLAN_PYTHON_WRAPPER.md and IMPLEMENTATION_NOTES.md if behaviour
-changed. Then:
+Update the README and CLAUDE.md if behaviour changed. Then:
 
 ```bash
 git add -A && git commit -m "Release X.Y.Z"

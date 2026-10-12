@@ -6,9 +6,8 @@ Guidance for Claude Code sessions working in this repository.
 
 Pure-Python ctypes wrapper and CLI for the HuaTeng Vision MVSDK (GigE and USB
 industrial cameras). The vendor library is loaded at runtime and is never shipped.
-Design and roadmap: `PLAN_PYTHON_WRAPPER.md`. Implementation decisions:
-`IMPLEMENTATION_NOTES.md`. What the SDK can change, wrapped or raw: `docs/CAPABILITIES.md` (same
-section order as the Rust repo's copy). Sibling Rust package: `../gcam-mvsdk-rs`.
+What the SDK can change, wrapped or raw: `docs/CAPABILITIES.md` (same section order as the
+Rust repo's copy). Sibling Rust package: `../gcam-mvsdk-rs`.
 
 ## Naming (exact, no variants)
 

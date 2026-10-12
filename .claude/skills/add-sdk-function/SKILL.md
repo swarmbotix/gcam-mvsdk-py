@@ -128,4 +128,4 @@ ruff check --select F,E9,B src tests examples scripts
 ```
 
 If the function is user-visible through the CLI, update the README command table; record
-any non-obvious choice in IMPLEMENTATION_NOTES.md.
+any non-obvious choice in a code comment next to the declaration.

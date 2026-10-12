@@ -466,7 +466,6 @@ SDK directory. macOS is not supported yet.
 
 ## For developers
 
-- Design and roadmap: [PLAN_PYTHON_WRAPPER.md](PLAN_PYTHON_WRAPPER.md)
 - Working on this repository (build, test, conventions): [CLAUDE.md](CLAUDE.md)
 - Task guides for Claude Code in [.claude/skills/](.claude/skills/), for both using and developing the
   driver: listing, renaming, addressing, configuring and grabbing from cameras, live view, the

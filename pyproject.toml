@@ -70,7 +70,6 @@ include = [
     "/sdk-manifest.toml",
     "/README.md",
     "/LICENSE",
-    "/IMPLEMENTATION_NOTES.md",
     "/CLAUDE.md",
     "/install.bash",
     "/pyproject.toml",
