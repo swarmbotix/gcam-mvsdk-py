@@ -1,0 +1,87 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gcam-mvsdk-py"
+version = "0.1.0"
+description = "Pure-Python ctypes wrapper and CLI for the HuaTeng MVSDK (GigE and USB industrial cameras). The vendor SDK is downloaded separately."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "swarmbotix" }]
+keywords = ["camera", "gige", "machine-vision", "mvsdk", "huateng", "ctypes"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: Capture :: Digital Camera",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+dependencies = [
+    "numpy>=1.20",
+    "tomli>=1.1; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+opencv = ["opencv-python-headless>=4.5"]
+dev = [
+    "pytest>=7",
+    "build>=1.0",
+]
+
+[project.scripts]
+gcam-mvsdk-py = "gcam_mvsdk_py.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/swarmbotix/gcam-mvsdk-py"
+Repository = "https://github.com/swarmbotix/gcam-mvsdk-py"
+Issues = "https://github.com/swarmbotix/gcam-mvsdk-py/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gcam_mvsdk_py"]
+
+# The canonical manifest lives at the repository root (byte-identical to the
+# gcam-mvsdk-rs copy); the wheel carries it as package data.
+[tool.hatch.build.targets.wheel.force-include]
+"sdk-manifest.toml" = "gcam_mvsdk_py/sdk-manifest.toml"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/scripts",
+    "/sdk-manifest.toml",
+    "/README.md",
+    "/LICENSE",
+    "/IMPLEMENTATION_NOTES.md",
+    "/CLAUDE.md",
+    "/install.bash",
+    "/pyproject.toml",
+]
+exclude = [
+    "*.so",
+    "*.dll",
+    "*.dylib",
+    "*.tar.gz",
+    "*.rar",
+    "*.zip",
+    "/vendor",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "hw: requires real cameras and the vendor SDK (set GCAM_MVSDK_HW_TEST=1)",
+]

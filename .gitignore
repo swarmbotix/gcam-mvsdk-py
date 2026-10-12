@@ -1,0 +1,37 @@
+# Vendor SDK: never committed (redistribution is not authorized by HuaTeng).
+vendor/
+*.tar.gz
+*.tgz
+*.rar
+*.zip
+*.7z
+*.so
+*.so.*
+*.dll
+*.lib
+*.dylib
+*.exe
+*.chm
+CameraApi.h
+CameraDefine.h
+CameraStatus.h
+mvsdk.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Output of `gcam-mvsdk-py grab` when run from the checkout
+*.png
+!docs/**/*.png
