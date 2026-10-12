@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import gc
+import sys
 
 import numpy as np
 import pytest
@@ -48,6 +49,10 @@ class FakeLib:
         self.calls = []
         self.timeout = False
         self.callback = None
+        # The Windows SDK writes ISP output bottom-up (DIB/BMP row order); the Linux
+        # SDK writes it top-down. Emulate the platform the tests run on.
+        self.bottom_up = sys.platform == "win32"
+        self.last_isp_dst = None
         self.isp_format = _ffi.CAMERA_MEDIA_TYPE_MONO8
         self.exposure = 1000.0
         self.ae = 1
@@ -194,11 +199,15 @@ class FakeLib:
         return 0
 
     def _CameraImageProcess(self, h, src, dst, head_ref):
-        # Simulated ISP: invert the image so processed output differs from raw.
+        # Simulated ISP: invert the image so processed output differs from raw, and
+        # store the rows bottom-up when emulating the Windows SDK.
+        self.last_isp_dst = dst
         raw = (ctypes.c_ubyte * (W * H)).from_address(src)
         out = (ctypes.c_ubyte * (W * H)).from_address(dst)
-        for i in range(W * H):
-            out[i] = 255 - raw[i]
+        for row in range(H):
+            out_row = H - 1 - row if self.bottom_up else row
+            for col in range(W):
+                out[out_row * W + col] = 255 - raw[row * W + col]
         head_ref._obj.uiMediaType = self.isp_format
         head_ref._obj.uBytes = W * H
         return 0
@@ -311,8 +320,10 @@ def test_grab_copy_and_view(fake, sdk):
             assert view.shape == (H, W) and view.dtype == np.uint8
             assert not view.flags.writeable
             assert np.array_equal(view, raw)
+            # Contract: to_numpy() returns rows top-down on every platform.
             assert np.array_equal(processed, 255 - raw)
-            assert processed.ctypes.data % 64 == 0
+            # The buffer handed to the SDK's ISP is 64-byte aligned.
+            assert fake.last_isp_dst % 64 == 0
         assert frame.released
         assert fake.released == [ctypes.addressof(fake.frame)]
         # Copies stay valid after release; the raw buffer may be reused.
@@ -320,6 +331,22 @@ def test_grab_copy_and_view(fake, sdk):
         assert raw[0, 0] == 0
         with pytest.raises(GcamMvsdkError):
             frame.view()
+
+
+@pytest.mark.parametrize("windows", [False, True], ids=["linux-top-down", "windows-bottom-up"])
+def test_to_numpy_returns_top_down_rows(fake, sdk, monkeypatch, windows):
+    """to_numpy() undoes the Windows SDK's bottom-up ISP output; view() is never flipped."""
+    monkeypatch.setattr(api, "_IS_WINDOWS", windows)
+    fake.bottom_up = windows
+    with sdk.open("SN001") as cam:
+        with cam.grab() as frame:
+            raw = frame.to_numpy(process=False)
+            processed = frame.to_numpy()
+            view = frame.view()
+            assert np.array_equal(view, raw)
+            assert raw[0, 0] == 0 and raw[-1, -1] == W * H - 1  # raw rows stay as delivered
+    assert np.array_equal(processed, 255 - raw)
+    assert processed.flags.c_contiguous
 
 
 def test_grab_timeout(fake, sdk):

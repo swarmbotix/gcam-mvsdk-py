@@ -62,7 +62,8 @@ python -m build                         # dist/gcam_mvsdk_py-<ver>-py3-none-any.
 
 Python 3.9 for testing without touching the system: `uv python install 3.9` with
 `UV_PYTHON_INSTALL_DIR` pointing at a scratch directory. Lint: `ruff check --select F,E9,B src tests`.
-Shell: `shellcheck -x install.bash scripts/*.sh` (`uvx --from shellcheck-py shellcheck` works).
+Shell: `uvx --from shellcheck-py==0.9.0.6 shellcheck -x install.bash scripts/*.sh .claude/skills/*/*.sh`
+at default severity; CI's distro shellcheck is older than 0.11 and still reports SC2015 info findings.
 
 ## Loader search order (`_loader.find_library`)
 

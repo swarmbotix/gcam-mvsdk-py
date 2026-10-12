@@ -28,10 +28,10 @@ if [ -z "$inc" ]; then
         fi
     done
 fi
-[ -n "$inc" ] && [ -f "$inc/CameraDefine.h" ] || {
+if [ -z "$inc" ] || [ ! -f "$inc/CameraDefine.h" ]; then
     echo "CameraDefine.h not found; pass -- INCLUDE_DIR or install the SDK" >&2
     exit 1
-}
+fi
 command -v gcc >/dev/null 2>&1 || {
     echo "gcc is required" >&2
     exit 1

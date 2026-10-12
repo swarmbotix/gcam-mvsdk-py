@@ -1,0 +1,4 @@
+# Check out every text file with LF on every platform. Windows runners default to
+# core.autocrlf=true, which would rewrite sdk-manifest.toml (pinned by SHA-256 and kept
+# byte-identical to the gcam-mvsdk-rs copy) and break install.bash and the shell helpers.
+* text=auto eol=lf

@@ -15,8 +15,18 @@ VERSION = "2.1.0.49"
 def make_lib(root: Path, arch: str = "x64", name: str = "libMVSDK.so") -> Path:
     path = root / "lib" / arch / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"\x7fELF fake")
+    path.write_bytes(b"fake library")
     return path
+
+
+def make_native_lib(root: Path) -> Path:
+    """Fake library with the directory and file name the loader expects on this platform.
+
+    Tests that call the loader without pinning ``system``/``arch`` must use this:
+    the loader looks for libMVSDK.so on Linux, libMVSDK.dylib on macOS, and
+    MVCAMSDK_X64.dll / MVCAMSDK.dll on Windows.
+    """
+    return make_lib(root, arch=_loader.detect_arch(), name=_loader.library_names()[0])
 
 
 @pytest.mark.parametrize(
@@ -137,16 +147,22 @@ def test_describe_search_lists_every_location(isolated_env):
     entries = _loader.describe_search(env={"GCAM_MVSDK_DIR": "/opt/sdk"}, arch="x64", system="Linux",
                                       manifest_versions=[VERSION])
     text = "\n".join(entries)
+    env_root = str(Path("/opt/sdk"))  # uses backslashes on Windows
     assert str(Path("/opt/sdk/lib/x64/libMVSDK.so")) in text
     assert str(isolated_env["work"] / "vendor" / VERSION / "lib" / "x64" / "libMVSDK.so") in text
     assert str(isolated_env["home"] / ".gcam-mvsdk" / VERSION / "lib" / "x64" / "libMVSDK.so") in text
     assert "[dynamic loader]" in text
     # Order: env, vendor, home, system.
-    idx = [text.index(s) for s in ("/opt/sdk", "vendor", ".gcam-mvsdk", "system-lib")]
+    idx = [text.index(s) for s in (env_root, "vendor", ".gcam-mvsdk", "system-lib")]
     assert idx == sorted(idx)
 
 
 def test_open_library_raises_sdk_not_found(isolated_env, monkeypatch):
+    # An SDK directory without a library for this platform. It also makes the
+    # ~/.gcam-mvsdk/<version> candidates appear on macOS, where the manifest has
+    # no release and versions are discovered from the file system only.
+    (isolated_env["home"] / ".gcam-mvsdk" / VERSION / "lib").mkdir(parents=True)
+
     def refuse(path):
         raise OSError("cannot open shared object file")
 
@@ -161,21 +177,23 @@ def test_open_library_raises_sdk_not_found(isolated_env, monkeypatch):
 
 
 def test_open_library_reports_rejected_file(isolated_env, monkeypatch):
-    lib = make_lib(isolated_env["home"] / ".gcam-mvsdk" / VERSION, arch=_loader.detect_arch())
+    # The rejection is simulated (as glibc reports "wrong ELF class" and Windows
+    # reports "%1 is not a valid Win32 application"), so this runs on every platform.
+    lib = make_native_lib(isolated_env["home"] / ".gcam-mvsdk" / VERSION)
 
     def refuse(path):
-        raise OSError("wrong ELF class: ELFCLASS32")
+        raise OSError("simulated loader rejection: wrong architecture")
 
     monkeypatch.setattr(_loader, "_open", refuse)
     with pytest.raises(SdkNotFound) as info:
         _loader.open_library()
     assert str(lib) in str(info.value)
-    assert "ELFCLASS32" in str(info.value)
+    assert "simulated loader rejection" in str(info.value)
 
 
 def test_open_library_with_directory_argument(isolated_env, monkeypatch):
     root = isolated_env["root"] / "explicit"
-    lib = make_lib(root, arch=_loader.detect_arch())
+    lib = make_native_lib(root)
     opened = []
     monkeypatch.setattr(_loader, "_open", lambda path: opened.append(path) or object())
     _, loc = _loader.open_library(str(root))
@@ -192,7 +210,7 @@ def test_gcam_mvsdk_home_overrides_default(isolated_env, monkeypatch):
     make_lib(isolated_env["home"] / ".gcam-mvsdk" / VERSION)
     monkeypatch.setenv("GCAM_MVSDK_HOME", str(custom))
     assert _loader.sdk_home() == custom
-    loc = _loader.find_library(system="Linux", manifest_versions=[VERSION])
+    loc = _loader.find_library(arch="x64", system="Linux", manifest_versions=[VERSION])
     assert Path(loc.path) == lib and loc.origin == "SDK home"
 
 

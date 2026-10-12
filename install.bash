@@ -368,12 +368,14 @@ print(r.url, r.filename.replace(' ', '%20'), r.sha256 or '-')
 
 locate_sdk() {
     local line
-    line="$(cd -- "$RUN_DIR" && "$VENV_PY" -c "
+    if ! line="$(cd -- "$RUN_DIR" && "$VENV_PY" -c "
 from $MODULE import find_library
 loc = find_library()
 if loc is not None and loc.sdk_root is not None:
     print(loc.sdk_root.name + '|' + str(loc.sdk_root))
-" 2>/dev/null || true)"
+" 2>/dev/null)"; then
+        line=""
+    fi
     if [ -n "$line" ]; then
         SDK_VERSION="${line%%|*}"
         SDK_ROOT="${line#*|}"

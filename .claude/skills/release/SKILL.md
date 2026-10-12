@@ -36,7 +36,7 @@ uv python install 3.9 && uv venv -p 3.9 /tmp/venv-py39
 uv pip install -p /tmp/venv-py39/bin/python -e ".[dev]"
 /tmp/venv-py39/bin/python -m pytest -q
 ruff check --select F,E9,B src tests
-uvx --from shellcheck-py shellcheck -x install.bash scripts/*.sh .claude/skills/*/*.sh
+uvx --from shellcheck-py==0.9.0.6 shellcheck -x install.bash scripts/*.sh .claude/skills/*/*.sh   # CI-equivalent
 ```
 
 If cameras are available, also run the hardware-test skill.

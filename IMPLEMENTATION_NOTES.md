@@ -239,3 +239,35 @@ production installer and developer tooling added afterwards.
   repository.
 * The sdist now also carries `install.bash` and `CLAUDE.md`. CI additionally runs shellcheck
   on every shell script and `check_wheel.py` on the built artifacts.
+
+## Cross-platform CI fixes (first CI run on GitHub)
+
+* **Windows ISP output is bottom-up, and `Frame.to_numpy()` flips it on purpose.** The
+  vendor's own Python examples call `CameraFlipFrameBuffer` after `CameraImageProcess` only
+  on Windows, with a comment that the Windows output is stored upside down in BMP (DIB) row
+  order while Linux output is upright. `to_numpy()` therefore reverses the rows on Windows so
+  that callers get top-down rows on every platform; `view()` and `to_numpy(process=False)`
+  expose the raw buffer and are never flipped. The unit test failed on Windows because the
+  fake library wrote ISP output top-down on every platform, so the flip inverted correct
+  data. The fake now emulates the platform's SDK (bottom-up on win32), the test asserts the
+  real contract (top-down result), and a parametrized test exercises both orientations on
+  every runner. The alignment assertion now checks the buffer passed to the SDK, because
+  the flipped result is a new array whose alignment numpy does not guarantee.
+* **Line endings.** GitHub's Windows runners check out with `core.autocrlf=true`, which
+  turned `sdk-manifest.toml` into CRLF and changed its pinned SHA-256. `.gitattributes`
+  (`* text=auto eol=lf`) now forces LF on every platform; this also keeps `install.bash`
+  and the skill scripts runnable when a Windows checkout is copied to Linux.
+* **Platform-dependent loader tests.** Tests that call the loader without pinning
+  `system`/`arch` now create the library name and directory the loader expects on the
+  running platform (`libMVSDK.so`, `libMVSDK.dylib`, `MVCAMSDK_X64.dll`), use
+  `str(Path(...))` for expected paths (backslashes on Windows), and pin `arch="x64"` where
+  they pin `system="Linux"` (the macOS runners are arm64). On macOS the manifest has no
+  release, so `~/.gcam-mvsdk/<version>` candidates come only from existing directories; the
+  "nothing found" test creates such a directory. The simulated "rejected library" test is not
+  ELF-specific and runs everywhere. Locally, these were checked by patching
+  `platform.system()`/`platform.machine()` to Windows/AMD64 and macOS/arm64, which reproduces
+  the CI failures on the old tests and passes on the new ones.
+* **shellcheck versions.** shellcheck 0.11 no longer reports SC2015 for `A && B || C`;
+  0.9 and 0.10 (the versions distributions ship) do, at "info" severity, which CI counts.
+  The two occurrences are rewritten as explicit `if` statements, and the documented local
+  command pins `shellcheck-py==0.9.0.6`.

@@ -879,7 +879,10 @@ class Frame:
         if used > capacity:  # pragma: no cover - would indicate an SDK contract change
             raise GcamMvsdkError("ISP output (%d bytes) exceeds the allocated %d bytes" % (used, capacity))
         arr = _shape_buffer(out[:used], int(out_head.uiMediaType), int(out_head.iWidth), int(out_head.iHeight))
-        if _IS_WINDOWS and arr.ndim >= 2:  # pragma: no cover - Windows ISP output is bottom-up
+        if _IS_WINDOWS and arr.ndim >= 2:
+            # The Windows SDK writes ISP output bottom-up (DIB row order); the vendor's
+            # own examples flip it with CameraFlipFrameBuffer. Return top-down rows on
+            # every platform. view() and to_numpy(process=False) are never flipped.
             arr = np.ascontiguousarray(arr[::-1])
         return arr
 
