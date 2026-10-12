@@ -45,7 +45,8 @@ below is also printed by the script while it runs, and `bash install.bash --help
    to `/usr/bin/python3`; this matters for step 6. Nothing is installed into the system Python or
    into any environment you already have.
 4. **Installs the package into that environment** with `pip`, together with NumPy. Dependencies
-   come from PyPI. With `--with-opencv`, OpenCV is added as well.
+   come from PyPI. With `--with-opencv`, headless OpenCV is added as well; with `--with-view`,
+   OpenCV with GUI support for the [live-view example](#live-view) (use one or the other).
 5. **Links the command.** Creates `~/.local/bin/gcam-mvsdk-py` as a symbolic link to the command
    inside the private environment. `~/.local/bin` is on `PATH` by default on Ubuntu once it exists;
    if it is not on yours, the script prints the line to add.
@@ -193,6 +194,30 @@ Two ways to run this:
 
 Errors raise `gcam_mvsdk_py.MvError`, which carries the SDK status code and message; a timed-out
 `grab` raises `gcam_mvsdk_py.MvTimeout`.
+
+### Live view
+
+`examples/live_view.py` shows one camera in an OpenCV window with a frame-rate overlay. It needs
+OpenCV with GUI support, which the `view` extra provides. Do not install it next to the headless
+`opencv` extra in the same environment; both provide the `cv2` module.
+
+```bash
+bash install.bash --with-view                                        # installed environment
+pip install "gcam-mvsdk-py[view] @ file:///path/to/gcam-mvsdk-py"    # or your own environment
+```
+
+From the repository directory:
+
+```bash
+~/.gcam-mvsdk/py-venv/bin/python3 examples/live_view.py sb01     # installed environment
+python3 examples/live_view.py <serial>                            # your own environment
+```
+
+Press `q` or Esc, or close the window, to quit. The camera argument can be left out when exactly one
+camera is connected. Options: `--exposure-us` (default 5000), `--mtu 9000` with jumbo frames,
+`--window` for the title. The window needs a display: run it in a desktop session or with `DISPLAY`
+set. Inside Docker, run `xhost +local:` on the host once and pass `DISPLAY` and `/tmp/.X11-unix`
+into the container.
 
 ## Privileges and network
 

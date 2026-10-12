@@ -44,6 +44,7 @@ src/gcam_mvsdk_py/
   cli.py                     argparse CLI: setup, list, rename, setip, info, grab, doctor
   _doctor.py                 diagnostics: SDK, CAP_NET_RAW, rp_filter, firewall, subnets
   _png.py                    PNG writer (OpenCV if present, zlib fallback)
+examples/live_view.py        minimal cv2.imshow live view (needs the `view` extra and a display)
 tests/                       unit tests (no SDK needed); tests/hw/ needs cameras
 .claude/skills/              task procedures: sdk-setup, camera-discovery, add-sdk-function,
                              release, hardware-test
@@ -100,6 +101,9 @@ Full procedure: `.claude/skills/add-sdk-function/SKILL.md`. In short:
 
 - Standard library first. numpy is the only hard dependency (plus tomli on Python < 3.11).
   OpenCV stays optional. No compiled code: the wheel must remain `py3-none-any`.
+- Two OpenCV extras: `opencv` (`opencv-python-headless`, PNG writing in `grab`) and `view`
+  (`opencv-python`, GUI for `examples/live_view.py`). Never install both in one environment:
+  the wheels overwrite each other's `cv2` module. `install.bash` refuses `--with-opencv --with-view`.
 - Python 3.9 syntax: `from __future__ import annotations`, `typing.Optional`/`List`, no `match`.
 - Every SDK status goes through `_errors.check` and becomes `MvError` (`MvTimeout` for -12).
 - No bare `except:`. Catch specific exceptions; `except Exception` only where a failure must

@@ -41,6 +41,7 @@ PYTHON="${PYTHON:-python3}"
 FROM=""
 NO_SUDO=0
 WITH_OPENCV=0
+WITH_VIEW=0
 USE_WHEEL=0
 DEV=0
 UNINSTALL=0
@@ -70,7 +71,9 @@ Options:
   --from FILE     install the SDK from a downloaded archive instead of the
                   vendor URL (air-gapped machines)
   --no-sudo       never run sudo; print the privileged commands instead
-  --with-opencv   also install OpenCV (the [opencv] extra)
+  --with-opencv   also install headless OpenCV (the [opencv] extra, PNG writing)
+  --with-view     also install OpenCV with GUI support (the [view] extra) for
+                  examples/live_view.py; cannot be combined with --with-opencv
   --wheel         install the newest wheel from dist/ instead of the source tree
   --dev           editable install with test tools; SDK goes to ./vendor/
   --uninstall     remove the virtual environment and the command link, and
@@ -156,6 +159,7 @@ parse_args() {
                 ;;
             --no-sudo) NO_SUDO=1; shift ;;
             --with-opencv) WITH_OPENCV=1; shift ;;
+            --with-view) WITH_VIEW=1; shift ;;
             --wheel) USE_WHEEL=1; shift ;;
             --dev) DEV=1; shift ;;
             --uninstall) UNINSTALL=1; shift ;;
@@ -166,6 +170,9 @@ parse_args() {
     done
     if [ "$DEV" -eq 1 ] && [ "$USE_WHEEL" -eq 1 ]; then
         die "--dev and --wheel cannot be combined"
+    fi
+    if [ "$WITH_OPENCV" -eq 1 ] && [ "$WITH_VIEW" -eq 1 ]; then
+        die "--with-opencv and --with-view cannot be combined (both install the cv2 module); --with-view also writes PNG files"
     fi
     if [ -n "$FROM" ]; then
         [ -f "$FROM" ] || die "--from: no such file: $FROM"
@@ -298,6 +305,9 @@ install_package() {
     fi
     if [ "$WITH_OPENCV" -eq 1 ]; then
         extras="${extras:+$extras,}opencv"
+    fi
+    if [ "$WITH_VIEW" -eq 1 ]; then
+        extras="${extras:+$extras,}view"
     fi
     if [ "$USE_WHEEL" -eq 1 ]; then
         for wheel in "$SCRIPT_DIR"/dist/"$MODULE"-*-py3-none-any.whl; do

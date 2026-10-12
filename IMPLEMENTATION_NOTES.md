@@ -271,3 +271,22 @@ production installer and developer tooling added afterwards.
   0.9 and 0.10 (the versions distributions ship) do, at "info" severity, which CI counts.
   The two occurrences are rewritten as explicit `if` statements, and the documented local
   command pins `shellcheck-py==0.9.0.6`.
+
+## Live-view example
+
+* `examples/live_view.py` is a deliberately small script (argparse, numpy through
+  `Frame.to_numpy()`, `cv2.imshow`): Mono8 output, continuous trigger, manual exposure,
+  a one-second rolling FPS overlay, and exit on `q`, Esc, or closing the window. Timeouts
+  print one line and the loop continues, still servicing the window. The camera is released
+  by the `with sdk.open(...)` block on every exit path.
+* `--mtu` sets `Camera.gige_packet_size`, which selects the largest packet size the camera
+  advertises that fits. The CLI `grab` command does not set a packet size at all (it has no
+  MTU option); the example uses the same API setter the C++ publisher's `GIGE_MTU` logic
+  corresponds to.
+* New extra `view = ["opencv-python>=4.5"]` (GUI build). The existing `opencv` extra stays
+  headless for PNG writing. The two wheels both install the `cv2` module and overwrite each
+  other, so `install.bash` refuses `--with-opencv --with-view`. Checked with OpenCV 5.0.0,
+  which pip currently resolves: every `cv2` name the example uses exists.
+* `tests/test_live_view_example.py` loads the script with a stub `cv2` and checks only the
+  argument parser, the missing-OpenCV message, and the "not exactly one camera" exit. No test
+  opens a window; the window itself has not been exercised (no camera is reachable).
