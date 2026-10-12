@@ -287,6 +287,12 @@ production installer and developer tooling added afterwards.
   headless for PNG writing. The two wheels both install the `cv2` module and overwrite each
   other, so `install.bash` refuses `--with-opencv --with-view`. Checked with OpenCV 5.0.0,
   which pip currently resolves: every `cv2` name the example uses exists.
+* `examples/requirements.txt` holds `.[view]` plus an explicit `opencv-python>=4.5`. pip
+  resolves the relative project path against the current directory, so the file must be used
+  from the repository root (tested; from `examples/` pip reports the directory as not
+  installable). A `file://${PROJECT_ROOT}` URL was rejected because it fails unless that
+  variable is set. Both OpenCV extras keep a low floor and no upper bound, so pip installs the
+  newest wheel (5.0.0.93 at the time of writing); no system packages are involved.
 * `tests/test_live_view_example.py` loads the script with a stub `cv2` and checks only the
   argument parser, the missing-OpenCV message, and the "not exactly one camera" exit. No test
   opens a window; the window itself has not been exercised (no camera is reachable).

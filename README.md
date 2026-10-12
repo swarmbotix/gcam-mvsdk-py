@@ -202,9 +202,12 @@ OpenCV with GUI support, which the `view` extra provides. Do not install it next
 `opencv` extra in the same environment; both provide the `cv2` module.
 
 ```bash
-bash install.bash --with-view                                        # installed environment
-pip install "gcam-mvsdk-py[view] @ file:///path/to/gcam-mvsdk-py"    # or your own environment
+pip install -r examples/requirements.txt                              # from a clone, in the repository root
+pip install "gcam-mvsdk-py[view] @ file:///path/to/gcam-mvsdk-py"     # any environment ('gcam-mvsdk-py[view]' once on PyPI)
+bash install.bash --with-view                                         # the installer's private environment
 ```
+
+OpenCV comes as a prebuilt wheel from PyPI, the newest release by default; no system packages are needed.
 
 From the repository directory:
 
