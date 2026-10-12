@@ -278,7 +278,6 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(line)
         print("[%d]" % row["index"])
         print("    User-set name : %s" % user)
-        print("    Model         : %s" % row["model"])
         print("    Product       : %s" % row["product"])
         print("    Serial number : %s" % row["serial"])
         print("    Port type     : %s" % row["port_type"])

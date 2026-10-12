@@ -62,7 +62,6 @@ Text output, one block per camera, introduced by `Found N camera(s)`:
 |---|---|
 | `[N]` | Enumeration order. It can change between runs; never select a camera by it. |
 | `User-set name` | Name stored in the camera (DeviceUserID), read by opening it. `<empty>`: no name set yet. `<could not open: ...>`: another program or host holds the camera, or it is unreachable on another subnet. `<not read>`: `--no-open` was given. |
-| `Model` | Name reported by enumeration (`acFriendlyName`). On a camera that was never named it is the model, for example `MV-GE134GM`; the SDK lets this field carry a custom name, so it may show the user-set name after a rename and a restart. Identify cameras by the user-set name and serial number, not by this line. |
 | `Product` | Product name reported by enumeration. |
 | `Serial number` | Factory serial. Unique and permanent; use it for `rename` and when names are missing or duplicated. |
 | `Port type` | How the camera is attached (GigE or USB), as reported by the SDK. |

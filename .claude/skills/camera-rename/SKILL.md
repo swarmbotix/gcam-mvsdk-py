@@ -91,8 +91,7 @@ limit is 31`) before anything is sent; the command line reports the latter as
 The first value is the name read before writing, the second the name read back after writing. If
 the camera reports a different name than the one written, the command prints
 `warning: the camera reports '...' after writing '...'` and exits with status 1. `list` reads the
-name from the camera, so it shows the new name at once; the enumeration name on the `Model` line
-may change only after the camera restarts.
+name from the camera, so it shows the new name at once.
 
 ## If it fails
 
