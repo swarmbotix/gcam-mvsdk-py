@@ -171,9 +171,25 @@ Two ways to run this:
 
 - With the installed environment: `~/.gcam-mvsdk/py-venv/bin/python3 my_script.py`. That
   interpreter already has the package, NumPy, and (if granted) the raw-socket capability.
-- In your own environment: `pip install /path/to/gcam-mvsdk-py` (or the wheel from `dist/`), then
-  run as usual. Your interpreter then needs `CAP_NET_RAW` or `sudo -E` for GigE discovery, exactly
-  like the command.
+- In your own environment, install the package with one of these:
+
+  ```bash
+  pip install /path/to/gcam-mvsdk-py                                   # local clone
+  pip install /path/to/gcam-mvsdk-py/dist/gcam_mvsdk_py-0.1.0-py3-none-any.whl   # built wheel
+  pip install "git+https://github.com/swarmbotix/gcam-mvsdk-py@v0.1.0"  # GitHub, pinned
+  pip install gcam-mvsdk-py                                             # later, once on PyPI
+  pip install "gcam-mvsdk-py[opencv] @ file:///path/to/gcam-mvsdk-py"   # with the OpenCV extra
+  ```
+
+  Or the matching line in `requirements.txt` or the `dependencies` list of `pyproject.toml`:
+
+  ```
+  gcam-mvsdk-py @ file:///path/to/gcam-mvsdk-py
+  gcam-mvsdk-py @ git+https://github.com/swarmbotix/gcam-mvsdk-py@v0.1.0
+  ```
+
+  Your interpreter then needs the SDK (`gcam-mvsdk-py setup` or `GCAM_MVSDK_DIR`) and, for GigE
+  discovery, `CAP_NET_RAW` or `sudo -E`, exactly like the command.
 
 Errors raise `gcam_mvsdk_py.MvError`, which carries the SDK status code and message; a timed-out
 `grab` raises `gcam_mvsdk_py.MvTimeout`.
