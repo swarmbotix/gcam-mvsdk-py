@@ -1,9 +1,9 @@
 ---
 name: camera-discovery
-description: Find HuaTeng GigE and USB cameras with gcam-mvsdk-py, explain why `gcam-mvsdk-py list` shows 0 cameras (privileges, rp_filter, firewall, subnet, link, busy camera), move a camera to the right subnet with setip, and rename a camera by serial number. Use for any "no cameras found", "camera not visible", "wrong IP", or "rename camera" request.
+description: Troubleshoot HuaTeng GigE and USB camera discovery with gcam-mvsdk-py. Explains why `gcam-mvsdk-py list` shows 0 cameras or misses one (privileges, rp_filter, firewall, subnet, link, busy camera) and gets it listed and openable again. Use for any "no cameras found", "camera not visible", or "camera listed but cannot be opened" request. For everyday listing use camera-list; for renaming, camera-rename; for changing an IP address, camera-setip.
 ---
 
-# Camera discovery, setip, and rename
+# Camera discovery troubleshooting
 
 GigE discovery is a GVCP broadcast (UDP 3956) on the host NIC the cameras are cabled to. It
 needs raw-socket permission (root or `CAP_NET_RAW`), `rp_filter=0`, an open firewall on that
@@ -42,7 +42,8 @@ stop it, and retry.
 
 ## Step 3: camera on the wrong subnet (setip)
 
-`doctor` reports "camera X is not in the subnet of host NIC Y". Then:
+`doctor` reports "camera X is not in the subnet of host NIC Y". The full procedure, with the
+address choice and the confirmation steps, is the camera-setip skill. In short:
 
 ```bash
 gcam-mvsdk-py list --json            # note camera_mac, host_ip, host_mask of that camera
@@ -57,7 +58,8 @@ one. `setip` stores a persistent address in the camera.
 ## Step 4: rename by serial number
 
 Publishers select cameras by user-set name (`CAM_NAME` in the compose files), so names must
-be unique and stable.
+be unique and stable. The full procedure, with the name rules and the confirmation step, is the
+camera-rename skill. In short:
 
 ```bash
 gcam-mvsdk-py list                           # find the serial number of the physical camera

@@ -2,8 +2,21 @@
 
 Every code block in docs/CAPABILITIES.md is copied from this file by
 ``python scripts/update_capabilities_doc.py``, and tests/test_capabilities_examples.py
-runs each function once against a fake SDK. The functions are written to be read;
-call them yourself with an open camera, for example::
+runs each function once against a fake SDK. The functions are written to be read.
+
+Run them against a real camera from the repository root (use an interpreter that can
+discover cameras, for example ``~/.gcam-mvsdk/py-venv/bin/python3``)::
+
+    python examples/capabilities.py --list                  # functions by document section
+    python examples/capabilities.py sb01                    # every function, read-only
+    python examples/capabilities.py sb01 exposure_auto      # one function, read-only
+    python examples/capabilities.py sb01 2 --write          # section 2, setters applied
+
+Without ``--write`` the setters are skipped and listed, while reads, streaming and
+grabbing still run. ``--write`` applies the setters to the camera's working settings
+and never saves a parameter group. Sections 1 and 8 (names, addresses, user data,
+parameter groups and files) are always shown as dry runs. Or call a function
+yourself with an open camera::
 
     import gcam_mvsdk_py
     from capabilities import exposure_auto      # run from the examples/ directory
@@ -16,6 +29,9 @@ Functions whose first parameter is ``sdk`` work on the library and must run befo
 a camera is opened. Settings marked "model dependent" raise ``gcam_mvsdk_py.MvError``
 (usually status -4, not supported) on cameras that lack the feature.
 """
+
+import argparse
+import sys
 
 # snippet: imports
 from ctypes import POINTER, byref, c_double, c_float, c_int, c_uint, c_ushort
@@ -448,3 +464,142 @@ def vendor_media_type_raw(cam):
     if types:
         cam.call("CameraSetMediaType", types[0][0], argtypes=[c_int])
     return {"current": current, "available": [t[2] for t in types]}
+
+
+# ---------------------------------------------------------------------------
+# Command-line runner (not shown in docs/CAPABILITIES.md)
+# ---------------------------------------------------------------------------
+
+SECTIONS = {
+    "1. Identity and network": (identity_name, identity_network, identity_serial_and_user_data),
+    "2. Exposure and gain": (exposure_manual, exposure_auto, exposure_flicker, gain_rgb, exposure_multi_raw),
+    "3. Frame rate, trigger and timing": (frame_rate, trigger_software, trigger_hardware, streaming_control),
+    "4. Image geometry": (geometry_resolution, geometry_snap_and_transfer_roi_raw, geometry_orientation,
+                          geometry_flip, geometry_line_scan_raw),
+    "5. Image processing": (isp_output_and_processor, isp_tone, isp_noise, isp_white_balance,
+                            isp_lut_and_undistort_raw),
+    "6. Digital I/O, strobe and lighting": (io_digital, io_strobe, io_led_lighting_encoder_raw),
+    "7. GigE transport": (gige_transport,),
+    "8. Parameter persistence": (persistence_groups, persistence_library),
+    "9. Callbacks": (callbacks,),
+    "10. Vendor GUI and recording": (vendor_media_type_raw,),
+}
+
+# Names, addresses, user data, parameter groups, files and SDK-wide paths outlive the
+# process, so these sections are shown as dry runs even with --write.
+ALWAYS_DRY_RUN = SECTIONS["1. Identity and network"] + SECTIONS["8. Parameter persistence"]
+
+# Camera and Sdk methods that change something; a dry run lists them instead of calling them.
+_WRITE_METHODS = {
+    "call", "set_roi", "set_resolution", "set_output", "set_frame_resend_count", "set_callback",
+    "set_connection_callback", "clear_callback", "save_parameter", "load_parameter",
+    "save_parameter_to_file", "load_parameter_from_file", "write_user_data", "white_balance_once",
+    "black_balance_once", "gige_set_ip", "gige_set_option", "set_sys_option", "set_data_directory",
+}
+
+
+def _short(value):
+    text = repr(value)
+    return text if len(text) <= 60 else text[:57] + "..."
+
+
+class _DryRun:
+    """Stands in for a Camera or Sdk: reads pass through, writes are listed and skipped."""
+
+    def __init__(self, target, skipped):
+        object.__setattr__(self, "_target", target)
+        object.__setattr__(self, "_skipped", skipped)
+        object.__setattr__(self, "_extra", {})
+
+    def __getattr__(self, name):
+        if name in self._extra:
+            return self._extra[name]
+        value = getattr(self._target, name)
+        if name == "sdk":
+            return _DryRun(value, self._skipped)
+        if name in _WRITE_METHODS:
+            def skip(*args, **kwargs):
+                words = [_short(a) for a in args]
+                words += ["%s=%s" % (k, _short(v)) for k, v in kwargs.items() if k != "argtypes"]
+                self._skipped.append("%s(%s)" % (name, ", ".join(words)))
+            return skip
+        return value
+
+    def __setattr__(self, name, value):
+        if isinstance(getattr(type(self._target), name, None), property):
+            self._skipped.append("%s = %s" % (name, _short(value)))
+        else:
+            self._extra[name] = value  # a plain attribute, such as a callback kept alive
+
+
+def _select(choice):
+    """Functions for a section number, a function name, or None (all), in document order."""
+    everything = [fn for fns in SECTIONS.values() for fn in fns]
+    if choice is None:
+        return everything
+    for title, fns in SECTIONS.items():
+        if title.split(".")[0] == choice:
+            return list(fns)
+    return [fn for fn in everything if fn.__name__ == choice]
+
+
+def _run_one(sdk, dev, fn, dry, skipped):
+    if fn.__code__.co_varnames[0] == "sdk":
+        return fn(_DryRun(sdk, skipped) if dry else sdk)
+    with sdk.open(dev) as cam:  # a freshly opened camera for every function
+        return fn(_DryRun(cam, skipped) if dry else cam)
+
+
+def main(argv=None):
+    """``python examples/capabilities.py <camera> [function or section] [--write]``."""
+    parser = argparse.ArgumentParser(
+        description="Run the docs/CAPABILITIES.md examples against one camera. Read-only unless --write.")
+    parser.add_argument("camera", nargs="?", metavar="CAMERA", help="user-set name or serial number")
+    parser.add_argument("choice", nargs="?", metavar="FUNCTION",
+                        help="function name or section number, e.g. exposure_auto or 2 (default: all)")
+    parser.add_argument("--write", action="store_true",
+                        help="apply the setters to the working settings (sections 1 and 8 stay dry runs; "
+                             "section 6 drives the camera's outputs)")
+    parser.add_argument("--list", action="store_true", help="list the functions by section and exit")
+    args = parser.parse_args(argv)
+
+    if args.list:
+        for title, fns in SECTIONS.items():
+            print("%s%s" % (title, "  (always a dry run)" if fns[0] in ALWAYS_DRY_RUN else ""))
+            for fn in fns:
+                print("    %-36s %s" % (fn.__name__, fn.__doc__))
+        return 0
+    if args.camera is None:
+        parser.error("name the camera (user-set name or serial number); see: gcam-mvsdk-py list")
+    chosen = _select(args.choice)
+    if not chosen:
+        parser.error("no function or section %r; see --list" % args.choice)
+
+    try:
+        sdk = gcam_mvsdk_py.load()
+        dev = sdk.find(args.camera)
+    except gcam_mvsdk_py.GcamMvsdkError as exc:
+        print("error: %s" % exc, file=sys.stderr)
+        return 1
+    print("Camera %r: SN %s, model %s. %s" % (args.camera, dev.serial, dev.model,
+          "Setters are applied (not saved)." if args.write else "Read-only: setters are listed, not called."))
+    failures = 0
+    for fn in chosen:
+        dry = not args.write or fn in ALWAYS_DRY_RUN
+        title = next(t for t, fns in SECTIONS.items() if fn in fns)
+        print("\n== %s  [%s; %s]" % (fn.__name__, title, "dry run" if dry else "write"))
+        skipped = []
+        try:
+            print("   result : %s" % (_run_one(sdk, dev, fn, dry, skipped),))
+        except (gcam_mvsdk_py.GcamMvsdkError, ValueError) as exc:
+            failures += 1
+            unsupported = isinstance(exc, MvError) and exc.status == -4
+            print("   error  : %s%s" % (exc, "  <- not supported by this model" if unsupported else ""))
+        for i, line in enumerate(skipped):
+            print("   %-8s %s" % ("skipped:" if i == 0 else "", line))
+    print("\n%d function(s), %d raised an error." % (len(chosen), failures))
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

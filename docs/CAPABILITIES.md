@@ -19,7 +19,10 @@ the value and read it back.
 
 Every code block on this page is copied from [`examples/capabilities.py`](../examples/capabilities.py)
 by `scripts/update_capabilities_doc.py`, and the unit tests run each function once against a
-simulated SDK. They have not been run against every camera model. The examples use these imports:
+simulated SDK. They have not been run against every camera model. To try them on your camera, run
+`python examples/capabilities.py <name or serial> [function or section number]` from the repository
+root: it is read-only unless `--write` is given (sections 1 and 8 are never written), and `--list`
+shows which function belongs to which section. The examples use these imports:
 
 <!-- snippet: imports -->
 ```python

@@ -102,7 +102,10 @@ Functions whose Get does not mirror the Set, or that fill buffers, get an explic
 ## Step 6: update docs/CAPABILITIES.md
 
 1. In the item's row, change the Python column from `raw` to `wrapped: cam.noise_reduction`.
-2. In `examples/capabilities.py`, replace the raw `cam.call(...)` line with the property.
+2. In `examples/capabilities.py`, replace the raw `cam.call(...)` line with the property. A new
+   example function also needs a `<!-- snippet: name -->` block in its section of the document
+   and an entry in the `SECTIONS` table at the end of `examples/capabilities.py`, which the
+   command-line runner (run-capabilities-example skill) and the tests use.
 3. Regenerate the snippets and the summary counts, then check:
 
 ```bash

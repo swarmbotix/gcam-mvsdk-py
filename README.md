@@ -263,6 +263,8 @@ processing, digital I/O and strobe, GigE transport, parameter persistence, callb
 GUI functions. For each one it gives what it does, a typical use case, the vendor function, whether
 `gcam-mvsdk-py` wraps it, and a runnable Python example. Whether a particular camera supports a
 setting, and in what range, is shown by `gcam-mvsdk-py info <name or serial>` under "Capability".
+To try the examples on a camera, run `python examples/capabilities.py <name or serial>` from the
+repository; it changes no settings unless `--write` is given, and `--list` shows the functions by section.
 
 ## Privileges and network
 
@@ -463,6 +465,10 @@ SDK directory. macOS is not supported yet.
 
 - Design and roadmap: [PLAN_PYTHON_WRAPPER.md](PLAN_PYTHON_WRAPPER.md)
 - Working on this repository (build, test, conventions): [CLAUDE.md](CLAUDE.md)
+- Task guides for Claude Code in [.claude/skills/](.claude/skills/), for both using and developing the
+  driver: listing, renaming, addressing, configuring and grabbing from cameras, live view, the
+  capabilities examples, SDK setup and discovery problems; wrapping SDK functions, releases and
+  hardware tests.
 - Vendor SDK manual (English, SDK 2.1.0.49): [docs/LinuxSDK_Document_V2.1.0.49.pdf](docs/LinuxSDK_Document_V2.1.0.49.pdf),
   taken from the Linux SDK archive on HuaTeng's download page, http://huatengvision.com/download/1/,
   where newer SDK versions and the Chinese readme are also published. Chapter "The camera cannot

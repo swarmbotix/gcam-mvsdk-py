@@ -8,7 +8,8 @@
 * The table between ``<!-- summary:start -->`` and ``<!-- summary:end -->`` is
   recomputed from the item tables of the numbered sections: a row counts as
   wrapped or raw by the first word of its "Python" column.
-* Every function in examples/capabilities.py must appear in the document.
+* Every function in examples/capabilities.py must appear in the document, except
+  ``main`` and names starting with ``_`` (the command-line runner).
 
 Usage: python scripts/update_capabilities_doc.py [--check]
 With --check nothing is written; the exit status is 1 if the document is stale.
@@ -34,12 +35,15 @@ SUMMARY_RE = re.compile(r"(<!-- summary:start -->\n)(?P<body>.*?)(<!-- summary:e
 
 
 def example_sources(path: Path = EXAMPLES) -> Dict[str, str]:
-    """Function name -> exact source text, plus the ``imports`` block."""
+    """Function name -> exact source text, plus the ``imports`` block.
+
+    ``main`` and private helpers (``_name``) belong to the command-line runner and are skipped.
+    """
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     sources: Dict[str, str] = {}
     for node in ast.parse(text).body:
-        if isinstance(node, ast.FunctionDef):
+        if isinstance(node, ast.FunctionDef) and node.name != "main" and not node.name.startswith("_"):
             start = min([node.lineno] + [d.lineno for d in node.decorator_list])
             sources[node.name] = "\n".join(lines[start - 1 : node.end_lineno])
     begin = lines.index("# snippet: imports") + 1

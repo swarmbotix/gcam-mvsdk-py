@@ -170,7 +170,7 @@ production installer and developer tooling added afterwards.
 
 ## Testing
 
-* 315 unit tests, none of which needs the SDK: struct sizes and offsets, status
+* 326 unit tests, none of which needs the SDK: struct sizes and offsets, status
   table, loader search order with a fake tree (monkeypatched `HOME` and cwd),
   manifest parsing and byte identity with the Rust copy, CLI parsing, the
   downloader against a local `http.server` with a synthetic archive, the PNG
@@ -339,3 +339,28 @@ production installer and developer tooling added afterwards.
   answers the matching `Get`, so property round trips need no per-function fake.
   `tests/test_api_settings.py` covers every new property and method.
 * Not verified on hardware: none of the new settings has been exercised against a camera.
+
+## User task guides and the capabilities runner
+
+* Seven skills for people who use the driver, named and laid out so that `gcam-mvsdk-rs` can
+  carry the same set: camera-list, camera-rename, camera-setip, camera-configure,
+  camera-grab, run-live-view, run-capabilities-example. Each has a frontmatter description that
+  says when to pick it, then When to use, Prerequisites, Steps, Reading the output, If it fails,
+  and Safety. Every command and flag in them was checked against `gcam-mvsdk-py <command> --help`
+  and the example scripts' `--help`. camera-discovery stays the troubleshooting guide for an empty
+  or incomplete `list` and now points to camera-list, camera-rename and camera-setip.
+* `python examples/capabilities.py <camera> [function or section] [--write]` (and `--list`) runs
+  the documented examples. Without `--write`, each function receives a proxy of the camera (or
+  SDK): reads, `play()`, `grab()` and the raw `query()` pass through, while property assignments
+  and the changing methods (`call`, `set_roi`, `save_parameter`, `gige_set_ip`, ...) are recorded
+  and printed as "skipped". Sections 1 and 8 always run as dry runs, because names, addresses,
+  user data, parameter groups, `.config` files and the SDK data directory outlive the process.
+  Every function gets a freshly opened camera; nothing is ever saved to a parameter group.
+  `SECTIONS` maps the document sections to the functions; a test checks it against the position
+  of each snippet in docs/CAPABILITIES.md. `scripts/update_capabilities_doc.py` ignores `main`
+  and private helpers.
+* The parameter-group explanation in camera-configure rests on the header text: `CameraInit`
+  with -1/-1 loads "the mode and group used at the last exit", file-based modes keep `.config`
+  files in the data directory (default: the current directory), and `PARAM_MODE_IN_DEVICE`
+  needs `bParamInDevice`. Not verified on hardware: which group a camera loads after a power
+  cycle, and whether working settings survive a close and reopen without a saved group.

@@ -380,12 +380,14 @@ Implemented in this repository, version 0.1.0, committed to `main`:
 - `install.bash`: one-command Linux installer (venv with `--copies`, CLI link in `~/.local/bin`, SDK
   download or `--from`, grouped `sudo` for `setcap` and udev rules, `doctor` and `list`, `--uninstall`,
   `--dev`, `--wheel`, `--with-opencv`, `--no-sudo`). Tested end to end in a scratch HOME without sudo.
-- `.claude/skills/`: sdk-setup, camera-discovery, add-sdk-function, release, hardware-test, with helper
-  scripts.
+- `.claude/skills/`: task guides for using the driver (camera-list, camera-rename, camera-setip,
+  camera-configure, camera-grab, run-live-view, run-capabilities-example, camera-discovery, sdk-setup)
+  and for developing it (add-sdk-function, release, hardware-test), with helper scripts.
 - `docs/CAPABILITIES.md`: every setting the SDK exposes (94 items in ten sections, same order as the Rust
   copy; 64 wrapped, 30 reachable raw through `cam.call()`/`cam.query()`), with examples generated from
-  `examples/capabilities.py`. Also `examples/live_view.py` with the `view` extra.
-- Tests: 315 unit tests pass on Python 3.9 and 3.13 without the SDK; hardware tests are gated by
+  `examples/capabilities.py`, which also runs them against a camera (read-only unless `--write`).
+  Also `examples/live_view.py` with the `view` extra.
+- Tests: 326 unit tests pass on Python 3.9 and 3.13 without the SDK; hardware tests are gated by
   `GCAM_MVSDK_HW_TEST=1` and have not been run against cameras yet.
 - Deviation: `CameraSetGigePacketSize` does not exist in SDK 2.1.0.49; packet size uses
   `CameraSetTransPackLen`. Other choices are recorded in `IMPLEMENTATION_NOTES.md`.
