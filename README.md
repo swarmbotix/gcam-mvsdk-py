@@ -163,9 +163,12 @@ gcam-mvsdk-py list                       # the "user-set name" column now shows 
 gcam-mvsdk-py info sb00                  # select by name from now on
 ```
 
-Rules: at most 31 bytes, ASCII, none of `\ / : * ? " < > |`; the setter raises `ValueError`
-otherwise. Pick names that are unique on your network; if two cameras carry the same name,
-selection by name is ambiguous and you must fall back to the serial number. The camera must not be
+Rules enforced by the camera and checked by the setter (`ValueError` otherwise): at most 31 bytes
+and none of `\ / : * ? " < > |`. Beyond that the camera stores the name in GBK, so other characters
+are accepted; stick to ASCII letters, digits, `-` and `_` anyway, because the name becomes part of
+topic names, file names and launch scripts. Pick names that are unique on your network; if two
+cameras carry the same name, selection by name is ambiguous and you must fall back to the serial
+number. The camera must not be
 open in another program while you rename it; stop any publisher or viewer first (status `-13` or
 `32774` means it is still held).
 
