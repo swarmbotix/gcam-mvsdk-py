@@ -196,8 +196,9 @@ Errors raise `gcam_mvsdk_py.MvError`, which carries the SDK status code and mess
 
 ## Privileges and network
 
-GigE discovery needs four things. `gcam-mvsdk-py doctor` checks each one and prints the command
-for your machine.
+GigE discovery needs four things, and streaming at the camera's full frame rate needs a fifth.
+`gcam-mvsdk-py doctor` checks the first four and prints the command for your machine; the fifth is
+not checked by `doctor` and is explained under [Known issues](#known-issues).
 
 ```bash
 # 1. Raw-socket capability for the private Python (install.bash offers this)
@@ -216,6 +217,11 @@ sudo firewall-cmd --zone=trusted --change-interface=enp4s0 --permanent && sudo f
 sudo nmcli con mod "<connection name>" ipv4.method manual ipv4.addresses 192.168.3.10/24
 sudo nmcli con up "<connection name>"
 gcam-mvsdk-py setip <camera MAC> 192.168.3.252 255.255.255.0 0.0.0.0
+
+# 5. Larger socket receive buffers, now and after reboot (needed for full frame rate; see Known issues)
+sudo sysctl -w net.core.rmem_max=33554432 net.core.rmem_default=33554432
+printf 'net.core.rmem_max=33554432\nnet.core.rmem_default=33554432\n' \
+  | sudo tee -a /etc/sysctl.d/60-gige-camera.conf
 
 # USB cameras instead: vendor udev rules
 gcam-mvsdk-py setup --udev
@@ -241,13 +247,79 @@ run `bash install.bash` again so the private copy and its capability are refresh
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `gcam-mvsdk-py: command not found` | `~/.local/bin` is not on `PATH` in this terminal | Open a new terminal; or `export PATH="$HOME/.local/bin:$PATH"` and add it to `~/.bashrc`. Being in the repository directory does not help. |
-| `list` says "No cameras found" | Missing raw-socket permission, `rp_filter` not 0, firewall, camera on another subnet or another NIC, no power or link | Run `gcam-mvsdk-py doctor` and apply the fixes it prints (see [Privileges](#privileges-and-network)) |
+| `list` says "No cameras found" | Missing raw-socket permission, `rp_filter` not 0 (Ubuntu 24.04 default is 2), firewall, camera on another subnet or another NIC, no power or link | Run `gcam-mvsdk-py doctor` and apply the fixes it prints (see [Privileges](#privileges-and-network) and [Known issue 1](#1-list-finds-no-cameras-and-the-camera-is-absent-from-arp--a)) |
 | `SdkNotFound` / "HuaTeng MVSDK library not found" | SDK not installed, deleted, or for another CPU architecture | `gcam-mvsdk-py setup`, or `export GCAM_MVSDK_DIR=<extracted SDK>`; on soft-float ARM `export GCAM_MVSDK_ARCH=arm_softfp` |
 | `status 32774` (0x8006) or `status -45` when opening | The camera is held by another process or host (a publisher, an old container, a viewer) | Stop the holder: `docker ps`, then `docker stop <id>`; close other viewers; retry |
 | `status -13` (I/O error) when opening | Same as above, or the camera is not reachable on the current subnet | Stop other holders; `gcam-mvsdk-py doctor`; move the camera with `setip` |
 | `Permission denied` or `Operation not permitted` | GigE: the Python lacks the raw-socket permission. USB: udev rules missing | GigE: the `setcap` command above, or `sudo -E`. USB: `gcam-mvsdk-py setup --udev`, then replug |
 | `grab` times out (`status -12`) | Packets larger than the NIC MTU, `rp_filter`, firewall | Apply the network fixes; for jumbo frames set the NIC MTU to 9000 |
+| Frame rate stuck near 60 fps, no frames lost | `net.core.rmem_max` at the Ubuntu default (about 200 KB); the camera throttles itself after resend requests | Step 5 in [Privileges](#privileges-and-network); details under [Known issue 2](#2-frame-rate-capped-near-60-fps-although-no-frames-are-lost) |
 | Download fails, or the size or checksum does not match | The vendor moved or replaced the file | Download from http://huatengvision.com/download/1/ and use `--from`. A checksum mismatch is never overridden. |
+
+## Known issues
+
+Two problems appear on nearly every fresh Ubuntu host. Neither is a bug in this package or in the
+SDK; both are kernel defaults that are wrong for GigE Vision cameras. `install.bash` never changes
+them (see [What it never does](#what-it-never-does)), so apply each fix once per host.
+
+### 1. `list` finds no cameras, and the camera is absent from `arp -a`
+
+**Symptom.** The camera is powered, the switch link LED is on, and the host NIC is up, yet
+`gcam-mvsdk-py list` reports no cameras. The camera's MAC address does not appear in `arp -a` either.
+Inside Docker with `network_mode: host` the result is identical, so the container is not the cause.
+
+**Why it happens.** A GigE Vision camera answers the discovery broadcast from whatever address it
+currently holds. A fresh camera usually has a link-local address (169.254.x.x) or an address left
+over from another network, so its reply arrives from a subnet the host has no route to. Ubuntu
+24.04 ships with `net.ipv4.conf.*.rp_filter = 2` (loose reverse-path filtering), which silently
+drops such packets inside the kernel, before any user-space program sees them. That is why the
+camera is missing from `arp -a` as well. When `ufw` is enabled it additionally blocks the inbound
+GigE Vision control port (UDP 3956), which stops discovery even with `rp_filter` at 0.
+
+**Fix.** Steps 2 and 3 in [Privileges and network](#privileges-and-network): set `rp_filter` to 0
+for all interfaces and for the camera NIC, write the setting to `/etc/sysctl.d/60-gige-camera.conf` so it
+survives a reboot, and allow inbound traffic from the camera in the firewall (or disable `ufw` on an
+isolated lab host). If the camera still has an address outside the host subnet afterwards, move it
+with `setip` (step 4).
+
+**Verify.**
+
+```bash
+sysctl net.ipv4.conf.all.rp_filter net.ipv4.conf.enp4s0.rp_filter   # both must print 0
+sudo ufw status                                                      # inactive, or an allow rule for the camera
+gcam-mvsdk-py list                                                    # the camera is listed
+```
+
+### 2. Frame rate capped near 60 fps although no frames are lost
+
+**Symptom.** Streaming works and the lost-frame counter stays at zero, but the rate settles near
+60 fps at full resolution (about 85 fps at 1280x720) on a camera rated for 91 fps. `info` shows that
+the configured frame rate is not the limit.
+
+| State | Throughput | Frame rate (1280x1024 mono) |
+|---|---|---|
+| Default `rmem_max` (about 200 KB) | 79.9 MB/s | 61 fps |
+| `rmem_max` = 32 MB | 119.9 MB/s | 91.5 fps |
+
+**Why it happens.** Ubuntu's default `net.core.rmem_max` is about 200 KB, while one 1280x1024
+mono frame is 1.3 MB and arrives as a burst of packets at wire speed. The kernel socket buffer
+overflows in the few milliseconds between the camera sending a frame and the SDK draining it,
+packets are dropped, the GigE Vision stream issues resend requests, and the camera firmware reacts
+by stepping down to a "safe" rate of roughly 78 MB/s. The camera is choosing to send more slowly,
+which is why no frames are reported lost.
+
+**Fix.** Step 5 in [Privileges and network](#privileges-and-network): raise `net.core.rmem_max`
+and `net.core.rmem_default` to 32 MB (33554432 bytes) and append them to
+`/etc/sysctl.d/60-gige-camera.conf`. The SDK sizes its sockets when a camera is opened, so restart any program
+that was already streaming. Inside Docker with `network_mode: host` the new values apply at once,
+without a rebuild.
+
+**Verify.**
+
+```bash
+sysctl net.core.rmem_max net.core.rmem_default   # both must print 33554432
+gcam-mvsdk-py grab <NAME or SN> -n 200           # then compare the wall-clock time against the rated frame rate
+```
 
 ## Air-gapped install
 
@@ -321,6 +393,9 @@ SDK directory. macOS is not supported yet.
 
 - Design and roadmap: [PLAN_PYTHON_WRAPPER.md](PLAN_PYTHON_WRAPPER.md)
 - Working on this repository (build, test, conventions): [CLAUDE.md](CLAUDE.md)
+- Vendor SDK manual (English, SDK 2.1.0.49): [docs/LinuxSDK_Document_V2.1.0.49.pdf](docs/LinuxSDK_Document_V2.1.0.49.pdf).
+  Chapter "The camera cannot be found when running the Demo" is the source of the network
+  requirements in [Known issues](#known-issues).
 - `bash install.bash --dev` installs editable with test tools and puts the SDK in `./vendor/`
   instead of your home.
 
