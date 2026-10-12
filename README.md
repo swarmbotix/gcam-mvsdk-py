@@ -421,9 +421,11 @@ SDK directory. macOS is not supported yet.
 
 - Design and roadmap: [PLAN_PYTHON_WRAPPER.md](PLAN_PYTHON_WRAPPER.md)
 - Working on this repository (build, test, conventions): [CLAUDE.md](CLAUDE.md)
-- Vendor SDK manual (English, SDK 2.1.0.49): [docs/LinuxSDK_Document_V2.1.0.49.pdf](docs/LinuxSDK_Document_V2.1.0.49.pdf).
-  Chapter "The camera cannot be found when running the Demo" is the source of the network
-  requirements in [Known issues](#known-issues).
+- Vendor SDK manual (English, SDK 2.1.0.49): [docs/LinuxSDK_Document_V2.1.0.49.pdf](docs/LinuxSDK_Document_V2.1.0.49.pdf),
+  taken from the Linux SDK archive on HuaTeng's download page, http://huatengvision.com/download/1/,
+  where newer SDK versions and the Chinese readme are also published. Chapter "The camera cannot
+  be found when running the Demo" is the source of the network requirements in
+  [Known issues](#known-issues).
 - `bash install.bash --dev` installs editable with test tools and puts the SDK in `./vendor/`
   instead of your home.
 
