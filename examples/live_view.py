@@ -47,6 +47,11 @@ def main(argv=None) -> int:
         cam.exposure_us = args.exposure_us
         if args.mtu:
             cam.gige_packet_size = args.mtu  # largest advertised size that fits
+        try:
+            cap_hz = cam.frame_rate_hz  # configured frame-rate cap, read once; 0 = uncapped
+            cap = "cap %d Hz" % cap_hz if cap_hz > 0 else "cap none"
+        except gcam_mvsdk_py.MvError:
+            cap = "cap unknown"
         cam.play()
         cv2.namedWindow(args.window, cv2.WINDOW_NORMAL)
         stamps, shown = deque(), False
@@ -58,12 +63,13 @@ def main(argv=None) -> int:
                 print("no frame within 1000 ms; waiting", file=sys.stderr)
                 img = None
             if img is not None:
-                now = time.monotonic()
+                now = time.perf_counter()  # one stamp per frame returned by grab
                 stamps.append(now)
                 while now - stamps[0] > 1.0:
                     stamps.popleft()
                 fps = (len(stamps) - 1) / (now - stamps[0]) if len(stamps) > 1 else 0.0
-                cv2.putText(img, "%.1f fps" % fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, 255, 2, cv2.LINE_AA)
+                cv2.putText(img, "measured %.1f fps  %s" % (fps, cap), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, 255, 2,
+                            cv2.LINE_AA)
                 cv2.imshow(args.window, img)
                 shown = True
             key = cv2.waitKey(1) & 0xFF

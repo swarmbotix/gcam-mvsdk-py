@@ -1,13 +1,14 @@
 ---
 name: camera-configure
-description: Read and change HuaTeng camera settings with gcam-mvsdk-py (exposure, auto exposure, gain, frame rate, trigger mode, ROI and resolution, mirror and rotation, white balance, packet size) and make them persistent by saving a parameter group (save_parameter("A")). Use when the user asks to set, tune, check or keep a camera setting, asks why a setting did not stick after reopening or a power cycle, or asks what range a camera model supports.
+description: Read and change HuaTeng camera settings with gcam-mvsdk-py (frame rate, exposure and auto exposure from the terminal with gcam-mvsdk-py set; gain, trigger mode, ROI and resolution, mirror and rotation, white balance, packet size from Python) and make them persistent by saving a parameter group (set --save A, or save_parameter("A")). Use when the user asks to set, tune, check or keep a camera setting, asks why a setting did not stick after reopening or a power cycle, or asks what range a camera model supports.
 ---
 
 # Configure a camera
 
-Settings are read with `gcam-mvsdk-py info` and changed through the Python API (the command line
-only sets exposure, output format and trigger mode for the duration of a `grab`). Every change goes
-into the camera's working settings and is lost unless it is saved to a parameter group.
+Settings are read with `gcam-mvsdk-py info`. Frame rate, exposure and auto exposure are changed
+from the terminal with `gcam-mvsdk-py set`, which can also save them; every other setting goes
+through the Python API. Every change goes into the camera's working settings and is lost unless it
+is saved to a parameter group (`set ... --save A`, or `cam.save_parameter("A")`).
 docs/CAPABILITIES.md is the reference for every setting, its range source, and a runnable example.
 
 ## When to use
@@ -59,8 +60,25 @@ docs/CAPABILITIES.md is the reference for every setting, its range source, and a
    section). Ranges come from the Capability block or from methods such as
    `cam.exposure_range_us()`; where the headers give none, the range is model dependent.
 
-3. **Try the change in one session and check a frame in the same session.** A new session (for
-   example `gcam-mvsdk-py grab`) reloads the saved group, so it does not show unsaved changes.
+3. **Frame rate, exposure, auto exposure: use the command line first.**
+
+   ```bash
+   gcam-mvsdk-py set <cam>                                # current frame rate, exposure, auto exposure
+   gcam-mvsdk-py set <cam> --frame-rate 30                # frame-rate cap in Hz, 0 = uncapped
+   gcam-mvsdk-py set <cam> --exposure-us 8000             # manual exposure; turns auto exposure off
+   gcam-mvsdk-py set <cam> --auto-exposure on             # or off
+   gcam-mvsdk-py set <cam> --frame-rate 30 --exposure-us 8000 --save A   # persistent, after the user confirms
+   ```
+
+   Each changed value is read back and printed as `frame rate: 30 Hz (was 0)`. Without `--save`
+   the change stays in the working settings, and the next program that opens the camera normally
+   reloads the saved group, so judge a value in one Python session (step 4) or save it once the
+   user agrees. `--save A` stores all current settings in group A and makes A the current group.
+   `--exposure-us` together with `--auto-exposure on` is refused (exit status 2).
+
+4. **Other settings, or judging a value before saving it: change it and check a frame in the same
+   Python session.** A new session (for example `gcam-mvsdk-py grab`) reloads the saved group, so
+   it does not show unsaved changes.
 
    ```bash
    ~/.gcam-mvsdk/py-venv/bin/python3 - <<'PY'
@@ -80,7 +98,8 @@ docs/CAPABILITIES.md is the reference for every setting, its range source, and a
    PY
    ```
 
-4. **Save, only after the user confirms** (always on production cameras):
+5. **Save, only after the user confirms** (always on production cameras); for frame rate and
+   exposure alone, `gcam-mvsdk-py set <cam> ... --save A` does the same:
 
    ```python
    with sdk.open("sb01") as cam:
@@ -90,7 +109,7 @@ docs/CAPABILITIES.md is the reference for every setting, its range source, and a
        cam.load_parameter("A")                         # make A the current group, loaded at the next open
    ```
 
-5. **Verify in a new session**, then after a power cycle:
+6. **Verify in a new session**, then after a power cycle:
 
    ```bash
    gcam-mvsdk-py info <cam>          # shows the saved values
@@ -101,17 +120,17 @@ docs/CAPABILITIES.md is the reference for every setting, its range source, and a
 
 | Setting | Command line | Python (`cam.` ...) | CAPABILITIES.md |
 |---|---|---|---|
-| Exposure | `grab --exposure-us N` (that grab only) | `exposure_us`, `exposure_range_us()`, `exposure_line_time_us` | 2 |
-| Auto exposure | none | `auto_exposure`, `ae_target`, `ae_threshold`, `ae_exposure_range_us = (lo, hi)`, `ae_analog_gain_range`, `ae_window`, `anti_flicker`, `light_frequency_hz` | 2 |
+| Exposure | `set --exposure-us N`; `grab --exposure-us N` (that grab only) | `exposure_us`, `exposure_range_us()`, `exposure_line_time_us` | 2 |
+| Auto exposure | `set --auto-exposure on\|off` (limits from Python) | `auto_exposure`, `ae_target`, `ae_threshold`, `ae_exposure_range_us = (lo, hi)`, `ae_analog_gain_range`, `ae_window`, `anti_flicker`, `light_frequency_hz` | 2 |
 | Gain | none | `analog_gain_x` (factor; `analog_gain_x_range()`), `analog_gain` (steps), `digital_gain = (r, g, b)` (100 = 1.0x) | 2 |
-| Frame rate | none | `frame_speed` (index from `frame_speeds()`), `frame_rate_hz` (0 = uncapped; some GigE models only) | 3 |
+| Frame rate | `set --frame-rate HZ` (cap, 0 = uncapped) | `frame_rate_hz` (some GigE models only), `frame_speed` (index from `frame_speeds()`) | 3 |
 | Trigger mode | `grab` always uses continuous | `trigger_mode = gcam_mvsdk_py.TRIGGER_CONTINUOUS`, `TRIGGER_SOFTWARE` or `TRIGGER_HARDWARE`; `soft_trigger()`, `trigger_count`, `trigger_delay_us`, `ext_trigger_signal`, `ext_trigger_delay_us`, `ext_trigger_jitter_us` | 3 |
 | ROI and resolution | none | `set_roi(x, y, w, h)` then read `resolution`; `set_resolution(index)` with `resolution_presets()`; `set_roi(0, 0, *cam.max_size)` for full frame | 4 |
 | Mirror and rotation | none | `mirror_horizontal`, `mirror_vertical`, `hardware_mirror_horizontal`/`_vertical` (some models), `rotation_deg` (0, 90, 180, 270) | 4 |
 | White balance (colour) | none | `auto_white_balance`, `white_balance_once()`, `wb_window`, `color_temperature_mode`, `preset_color_temperature`, `digital_gain` | 5 |
 | Output format | `grab --format` | `output_format = gcam_mvsdk_py.Mono8` (or `BGR8`, `RGB8`) | 5 |
 | Packet size (GigE) | none (`live_view.py --mtu` for its own session) | `gige_packet_size = 1500` (largest advertised size that fits), `packet_sizes()` | 7 |
-| Persistence | none | `save_parameter("A")`, `load_parameter("A")`, `parameter_group`, `parameter_mode`, `save_parameter_to_file(path)` | 8 |
+| Persistence | `set ... --save A` (all current settings) | `save_parameter("A")`, `load_parameter("A")`, `parameter_group`, `parameter_mode`, `save_parameter_to_file(path)` | 8 |
 
 Functions without a property are reachable with `cam.call()` and `cam.query()`, as the "raw"
 rows of docs/CAPABILITIES.md show. To try a whole section on a camera, use run-capabilities-example.

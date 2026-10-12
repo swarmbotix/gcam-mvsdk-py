@@ -143,6 +143,63 @@ def test_grab_rejects_bad_count(count):
         parse("grab", "sb01", "-n", count)
 
 
+def test_set_defaults():
+    ns = parse("set", "sb01")
+    assert ns.target == "sb01"
+    assert ns.frame_rate is None and ns.exposure_us is None and ns.auto_exposure is None and ns.save is None
+
+
+def test_set_options():
+    ns = parse("set", "sb01", "--frame-rate", "30", "--exposure-us", "8000", "--auto-exposure", "off", "--save", "b")
+    assert (ns.frame_rate, ns.exposure_us, ns.auto_exposure, ns.save) == (30, 8000.0, False, "B")
+
+
+@pytest.mark.parametrize("text, expected", [("on", True), ("ON", True), ("off", False), ("Off", False)])
+def test_set_auto_exposure_on_off(text, expected):
+    assert parse("set", "sb01", "--auto-exposure", text).auto_exposure is expected
+
+
+@pytest.mark.parametrize("group", ["A", "B", "C", "D", "a", "d"])
+def test_set_save_accepts_group_letters(group):
+    assert parse("set", "sb01", "--save", group).save == group.upper()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("--auto-exposure", "yes"),
+        ("--save", "E"),
+        ("--save", "default"),
+        ("--frame-rate", "-1"),
+        ("--frame-rate", "fast"),
+        ("--exposure-us", "short"),
+    ],
+)
+def test_set_rejects_bad_arguments(argv):
+    with pytest.raises(SystemExit) as info:
+        parse("set", "sb01", *argv)
+    assert info.value.code == 2
+
+
+def test_set_applies_reads_back_and_saves(monkeypatch, capsys):
+    from fake_mvsdk import GenericFakeLib
+
+    from gcam_mvsdk_py import api
+    from gcam_mvsdk_py._loader import LibraryLocation
+
+    fake = GenericFakeLib()
+    del fake.CameraSetFrameRate  # use the remembering fallback so the getter reads the value back
+    sdk = api.Sdk(fake, LibraryLocation("/fake/libMVSDK.so", "test"))
+    monkeypatch.setattr(cli, "_load", lambda args: sdk)
+    assert cli.main(["set", "SN001", "--frame-rate", "30", "--exposure-us", "8000", "--save", "b"]) == cli.EXIT_OK
+    assert fake.calls_to("CameraSetFrameRate")[-1][1] == 30
+    assert (fake.exposure, fake.ae, fake.saved_groups) == (8000.0, 0, [1])
+    out = capsys.readouterr().out
+    assert "frame rate: 30 Hz (was 0)" in out and "auto exposure: off (was on)" in out
+    assert "Saved to parameter group B" in out
+    assert cli.main(["set", "SN001", "--exposure-us", "5000", "--auto-exposure", "on"]) == cli.EXIT_USAGE
+
+
 def test_doctor_parses():
     assert parse("doctor").command == "doctor"
 

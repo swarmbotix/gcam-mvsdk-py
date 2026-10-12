@@ -1,6 +1,6 @@
 """Command-line interface: ``gcam-mvsdk-py <command>``.
 
-Commands: setup, list, rename, setip, info, grab, doctor. Only the standard
+Commands: setup, list, rename, setip, info, set, grab, doctor. Only the standard
 library (argparse) is used for parsing; commands that talk to cameras import
 the numpy-based API lazily so ``--help`` and ``setup`` stay fast.
 """
@@ -84,6 +84,23 @@ def _positive_int(text: str) -> int:
     return value
 
 
+def _non_negative_int(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("not an integer: %r" % text) from exc
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be 0 or more: %r" % text)
+    return value
+
+
+def _on_off(text: str) -> bool:
+    value = text.strip().lower()
+    if value not in ("on", "off"):
+        raise argparse.ArgumentTypeError("expected on or off, not %r" % text)
+    return value == "on"
+
+
 def _camera_name_arg(text: str) -> str:
     bad = sorted(set(text) & set('\\/:*?"<>|'))
     if bad:
@@ -142,6 +159,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("info", help="dump a camera's settings and capabilities")
     p.add_argument("target", metavar="NAME_OR_SN", help="user-set name or serial number")
     p.add_argument("--json", action="store_true", help="print JSON")
+
+    p = sub.add_parser("set", help="change frame rate, exposure, or auto exposure; --save keeps them")
+    p.add_argument("target", metavar="NAME_OR_SN", help="user-set name or serial number")
+    p.add_argument("--frame-rate", type=_non_negative_int, metavar="HZ", help="frame-rate cap in Hz (0 = uncapped)")
+    p.add_argument("--exposure-us", type=float, metavar="US", help="manual exposure time in microseconds (turns auto exposure off)")
+    p.add_argument("--auto-exposure", type=_on_off, metavar="on|off", help="switch auto exposure on or off")
+    p.add_argument("--save", type=str.upper, choices=("A", "B", "C", "D"),
+                   help="save the camera's settings to this parameter group (persistent)")
 
     p = sub.add_parser("grab", help="save frames as PNG")
     p.add_argument("target", metavar="NAME_OR_SN", help="user-set name or serial number")
@@ -448,6 +473,43 @@ def cmd_info(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _on_off_text(value: Any) -> str:
+    return ("on" if value else "off") if isinstance(value, bool) else str(value)
+
+
+def cmd_set(args: argparse.Namespace) -> int:
+    if args.exposure_us is not None and args.auto_exposure:
+        _err("--exposure-us sets a manual exposure, which turns auto exposure off; do not combine it with --auto-exposure on")
+        return EXIT_USAGE
+    changing = args.frame_rate is not None or args.exposure_us is not None or args.auto_exposure is not None
+    sdk = _load(args)
+    dev = sdk.find(args.target)
+    with sdk.open(dev) as cam:
+        rate, exposure, auto = (_safe(lambda: cam.frame_rate_hz), _safe(lambda: cam.exposure_us),
+                                _safe(lambda: cam.auto_exposure))
+        if not changing:
+            print("frame rate: %s Hz (0 = uncapped)" % rate)
+            print("exposure: %s us" % exposure)
+            print("auto exposure: %s" % _on_off_text(auto))
+        if args.frame_rate is not None:
+            cam.frame_rate_hz = args.frame_rate
+            print("frame rate: %s Hz (was %s)" % (_safe(lambda: cam.frame_rate_hz), rate))
+        if args.exposure_us is not None:
+            cam.exposure_us = args.exposure_us  # also turns auto exposure off
+            print("exposure: %s us (was %s)" % (_safe(lambda: cam.exposure_us), exposure))
+        if args.auto_exposure is not None:
+            cam.auto_exposure = args.auto_exposure
+        if args.auto_exposure is not None or args.exposure_us is not None:
+            print("auto exposure: %s (was %s)" % (_on_off_text(_safe(lambda: cam.auto_exposure)), _on_off_text(auto)))
+        if args.save:
+            cam.save_parameter(args.save)
+            cam.load_parameter(args.save)  # make it the current group, which the next open loads
+            print("Saved to parameter group %s (persistent); it is now the camera's current group." % args.save)
+        elif changing:
+            print("Not saved: the change stays in the camera's working settings (RAM) until saved; add --save A to keep it.")
+    return EXIT_OK
+
+
 def _file_label(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", text).strip("_") or "camera"
 
@@ -510,6 +572,7 @@ COMMANDS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "rename": cmd_rename,
     "setip": cmd_setip,
     "info": cmd_info,
+    "set": cmd_set,
     "grab": cmd_grab,
     "doctor": cmd_doctor,
 }

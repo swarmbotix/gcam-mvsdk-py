@@ -41,7 +41,7 @@ src/gcam_mvsdk_py/
   _manifest.py               sdk-manifest.toml reader (tomllib or tomli)
   api.py                     safe layer: load, Sdk, DeviceInfo, Camera, Frame
   setup_cmd.py               downloader: HEAD, GET, sha256, safe extract, manifest.json, udev
-  cli.py                     argparse CLI: setup, list, rename, setip, info, grab, doctor
+  cli.py                     argparse CLI: setup, list, rename, setip, info, set, grab, doctor
   _doctor.py                 diagnostics: SDK, CAP_NET_RAW, rp_filter, firewall, subnets
   _png.py                    PNG writer (OpenCV if present, zlib fallback)
 examples/live_view.py        minimal cv2.imshow live view (needs the `view` extra and a display)

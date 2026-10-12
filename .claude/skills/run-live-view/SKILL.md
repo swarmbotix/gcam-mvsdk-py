@@ -68,9 +68,10 @@ status 130). The camera is closed in every case.
 ## Reading the output
 
 - The window shows the camera image in grey (Mono8, also on colour cameras).
-- The white number at the top left, for example `58.3 fps`, is the rate at which frames arrived and
-  were displayed over the last second on this host. It is not the camera's configured rate: it
-  drops when frames time out, when the host is slow, or when the exposure is long (at most
+- The white text at the top left, for example `measured 29.8 fps  cap 30 Hz`, gives the rate at
+  which `grab` returned frames over the last second on this host, then the camera's configured
+  frame-rate cap, read once at start (`cap none` when uncapped). The measured rate drops below the
+  cap when frames time out, when the host is slow, or when the exposure is long (at most
   1,000,000 divided by the exposure in microseconds).
 - `no frame within 1000 ms; waiting` on the terminal means one grab timed out; the view keeps
   trying.

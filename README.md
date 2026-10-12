@@ -142,6 +142,7 @@ are found through the udev rules.
 | `gcam-mvsdk-py rename <SN> <NAME>` | Store a name in the camera (at most 31 characters, none of `\ / : * ? " < > \|`). Survives power cycles. |
 | `gcam-mvsdk-py setip <MAC> <IP> <MASK> <GW>` | Give a GigE camera a permanent IP address, even when it is on the wrong subnet. |
 | `gcam-mvsdk-py info <NAME or SN> [--json]` | Exposure, gain, resolution, frame rate, trigger, packet sizes. |
+| `gcam-mvsdk-py set <NAME or SN> [--frame-rate HZ] [--exposure-us US] [--auto-exposure on\|off] [--save A\|B\|C\|D]` | Change the frame-rate cap (0 = uncapped), exposure, or auto exposure and print each value read back; without options, print the current ones. Kept in RAM until `--save` stores them in a parameter group. |
 | `gcam-mvsdk-py grab <NAME or SN> [-n N] [-o DIR]` | Save N frames as PNG files (default 1, into the current directory). |
 | `gcam-mvsdk-py doctor` | Check the SDK, permissions, `rp_filter`, firewall, and subnets, and print the fix for each. |
 | `gcam-mvsdk-py setup [--from FILE]` | Download or reinstall the SDK (the installer already ran it). |
