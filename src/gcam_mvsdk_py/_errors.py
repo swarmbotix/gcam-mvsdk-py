@@ -17,7 +17,12 @@ class SdkNotFound(GcamMvsdkError):
     ``searched`` lists every location that was tried, in order.
     """
 
-    def __init__(self, searched: Iterable[str], detail: Optional[str] = None) -> None:
+    DEFAULT_HINT = (
+        "Run `gcam-mvsdk-py setup` to download it into ~/.gcam-mvsdk/, or set "
+        "GCAM_MVSDK_DIR to an extracted SDK directory (the one containing lib/)."
+    )
+
+    def __init__(self, searched: Iterable[str], detail: Optional[str] = None, hint: Optional[str] = None) -> None:
         self.searched: List[str] = list(searched)
         self.detail = detail
         lines = ["HuaTeng MVSDK library not found."]
@@ -26,10 +31,7 @@ class SdkNotFound(GcamMvsdkError):
         if self.searched:
             lines.append("Searched:")
             lines.extend("  - %s" % s for s in self.searched)
-        lines.append(
-            "Run `gcam-mvsdk-py setup` to download it into ~/.gcam-mvsdk/, or set "
-            "GCAM_MVSDK_DIR to an extracted SDK directory (the one containing lib/)."
-        )
+        lines.append(hint or self.DEFAULT_HINT)
         super().__init__("\n".join(lines))
 
 

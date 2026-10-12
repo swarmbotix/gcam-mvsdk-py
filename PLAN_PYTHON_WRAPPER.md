@@ -385,7 +385,7 @@ Implemented in this repository, version 0.1.0, committed to `main`:
 - `docs/CAPABILITIES.md`: every setting the SDK exposes (94 items in ten sections, same order as the Rust
   copy; 64 wrapped, 30 reachable raw through `cam.call()`/`cam.query()`), with examples generated from
   `examples/capabilities.py`. Also `examples/live_view.py` with the `view` extra.
-- Tests: 307 unit tests pass on Python 3.9 and 3.13 without the SDK; hardware tests are gated by
+- Tests: 315 unit tests pass on Python 3.9 and 3.13 without the SDK; hardware tests are gated by
   `GCAM_MVSDK_HW_TEST=1` and have not been run against cameras yet.
 - Deviation: `CameraSetGigePacketSize` does not exist in SDK 2.1.0.49; packet size uses
   `CameraSetTransPackLen`. Other choices are recorded in `IMPLEMENTATION_NOTES.md`.

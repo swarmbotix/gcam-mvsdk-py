@@ -28,9 +28,14 @@ production installer and developer tooling added afterwards.
    path is unconfirmed, so `setup` and `doctor` do not yet locate and record the
    installed DLL automatically. `setup` prints how to point the loader at it
    (`PATH`, `GCAM_MVSDK_DIR`, or copying it into `~/.gcam-mvsdk/<ver>/lib/x64`).
-5. **`GCAM_MVSDK_DIR` itself** is searched as a third location after
-   `$GCAM_MVSDK_DIR/lib/<arch>` and `$GCAM_MVSDK_DIR/lib`, so the variable can also
-   name a directory that holds the library directly.
+5. **`GCAM_MVSDK_DIR` is exclusive.** When it is set (non-empty after trimming), only
+   `$GCAM_MVSDK_DIR/lib/<arch>`, `$GCAM_MVSDK_DIR/lib` and `$GCAM_MVSDK_DIR` itself are
+   searched (the last one so the variable can also name a directory that holds the library
+   directly). If none holds the library, `SdkNotFound` names those three paths and says the
+   variable points at a directory without the library (or one that does not exist); the
+   loader never falls through to `./vendor`, the SDK home, the system path or the dynamic
+   loader. This matches `gcam-mvsdk-rs`: a wrong directory is reported, not ignored. Until
+   this change the Python loader fell through, contrary to the README.
 
 ## Packaging
 
@@ -61,7 +66,8 @@ production installer and developer tooling added afterwards.
   `os.add_dll_directory` is called for the DLL's directory.
 * A 32-bit interpreter on a 64-bit kernel maps to the 32-bit library (`x86` or
   `arm`), using the interpreter's pointer size.
-* `SdkNotFound` lists every candidate file path with its origin.
+* `SdkNotFound` lists every candidate file path with its origin; with `GCAM_MVSDK_DIR` set,
+  only its three candidates, and the last line says to fix or unset the variable.
 * macOS library names (`libMVSDK.dylib`, `libmvsdk.dylib`) are guesses; the macOS
   SDK has not been inspected and macOS is out of scope for this release.
 
@@ -164,7 +170,7 @@ production installer and developer tooling added afterwards.
 
 ## Testing
 
-* 307 unit tests, none of which needs the SDK: struct sizes and offsets, status
+* 315 unit tests, none of which needs the SDK: struct sizes and offsets, status
   table, loader search order with a fake tree (monkeypatched `HOME` and cwd),
   manifest parsing and byte identity with the Rust copy, CLI parsing, the
   downloader against a local `http.server` with a synthetic archive, the PNG

@@ -98,8 +98,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog=PROG,
         description="Configure and test HuaTeng (MVSDK) GigE and USB industrial cameras.",
         epilog=(
-            "The vendor SDK is searched in $GCAM_MVSDK_DIR, ./vendor/<version>,\n"
-            "~/.gcam-mvsdk/<version>, then the system library path.\n"
+            "The vendor SDK is loaded from $GCAM_MVSDK_DIR when it is set (nowhere else);\n"
+            "otherwise from ./vendor/<version>, ~/.gcam-mvsdk/<version>, then the system path.\n"
             "Run `%s setup` to download and install it." % PROG
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

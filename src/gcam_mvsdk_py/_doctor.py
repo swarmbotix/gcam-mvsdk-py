@@ -21,7 +21,19 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from . import __version__
-from ._loader import ENV_HOME, _venv_marker_home, describe_search, detect_arch, find_library, library_names, sdk_home
+from ._loader import (
+    ENV_DIR,
+    ENV_DIR_HINT,
+    ENV_HOME,
+    _venv_marker_home,
+    describe_search,
+    detect_arch,
+    env_dir_problem,
+    env_sdk_dir,
+    find_library,
+    library_names,
+    sdk_home,
+)
 
 CAP_NET_ADMIN = 12
 CAP_NET_RAW = 13
@@ -267,11 +279,17 @@ def run(sdk_path: Optional[str] = None) -> int:
         report.add(INFO, "Using --sdk %s" % sdk_path)
     else:
         location = find_library()
-        if location is None:
+        env_root = env_sdk_dir()
+        if location is None and env_root is not None:
+            report.add(FAIL, env_dir_problem(env_root) + " Searched:\n" + "\n".join(describe_search()) +
+                       "\n" + ENV_DIR_HINT)
+        elif location is None:
             report.add(FAIL, "MVSDK library not found. Searched:\n" + "\n".join(describe_search()) +
                        "\nFix: gcam-mvsdk-py setup   (or export GCAM_MVSDK_DIR=<extracted SDK>)")
         else:
             report.add(OK, "Library: %s  [%s]" % (location.path, location.origin))
+            if env_root is not None:
+                report.add(INFO, "%s is set, so ./vendor, the SDK home and the system path are not searched." % ENV_DIR)
             if location.sdk_root is not None:
                 manifest = location.sdk_root / "manifest.json"
                 if manifest.is_file():

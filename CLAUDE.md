@@ -73,11 +73,14 @@ at default severity; CI's distro shellcheck is older than 0.11 and still reports
 
 ## Loader search order (`_loader.find_library`)
 
-1. `$GCAM_MVSDK_DIR/lib/<arch>`, `$GCAM_MVSDK_DIR/lib`, `$GCAM_MVSDK_DIR`
-2. `./vendor/<version>/lib/<arch>` (relative to the current directory)
-3. `<sdk home>/<version>/lib/<arch>`; sdk home = `$GCAM_MVSDK_HOME`, else the path in
+`GCAM_MVSDK_DIR` set (non-empty after trimming) means exclusive: only `$GCAM_MVSDK_DIR/lib/<arch>`,
+`$GCAM_MVSDK_DIR/lib`, `$GCAM_MVSDK_DIR`; no library there raises `SdkNotFound` naming the three
+paths, with no fall-through (same rule as `gcam-mvsdk-rs`). Otherwise, first existing file wins:
+
+1. `./vendor/<version>/lib/<arch>` (relative to the current directory)
+2. `<sdk home>/<version>/lib/<arch>`; sdk home = `$GCAM_MVSDK_HOME`, else the path in
    `<venv>/gcam-mvsdk-py-home` written by install.bash, else `~/.gcam-mvsdk`
-4. System dirs (`LD_LIBRARY_PATH`, `/lib`, `/usr/lib`, multiarch; `PATH` on Windows), then bare name
+3. System dirs (`LD_LIBRARY_PATH`, `/lib`, `/usr/lib`, multiarch; `PATH` on Windows), then bare name
 
 Versions are the manifest's entries for the OS plus existing subdirectories, newest first.
 `<arch>`: x64, arm64, arm, x86 (`GCAM_MVSDK_ARCH` overrides, e.g. `arm_softfp`).

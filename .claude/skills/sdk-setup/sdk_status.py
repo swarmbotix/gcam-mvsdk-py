@@ -32,7 +32,13 @@ def main() -> int:
             print("  %s %s  [%s]" % (mark, path, entry.origin))
 
     location = _loader.find_library()
-    print("\nSelected: %s" % (location.path if location else "nothing (the dynamic loader is tried last)"))
+    env_root = _loader.env_sdk_dir()
+    if location:
+        print("\nSelected: %s" % location.path)
+    elif env_root is not None:
+        print("\nSelected: nothing. %s\n%s" % (_loader.env_dir_problem(env_root), _loader.ENV_DIR_HINT))
+    else:
+        print("\nSelected: nothing (the dynamic loader is tried last)")
     if location and location.sdk_root:
         manifest = location.sdk_root / "manifest.json"
         if manifest.is_file():

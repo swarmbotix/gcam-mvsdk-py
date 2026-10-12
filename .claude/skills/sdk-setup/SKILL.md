@@ -5,14 +5,14 @@ description: Fetch, re-fetch, or verify the HuaTeng MVSDK used by gcam-mvsdk-py,
 
 # SDK setup and SdkNotFound diagnosis
 
-The vendor library is never in the repository. It lives in one of the loader's search
-locations; the first existing file wins:
+The vendor library is never in the repository. If `GCAM_MVSDK_DIR` is set, it is the only
+place searched (`lib/<arch>`, `lib`, then the directory itself); a directory without the library
+is an error, never silently replaced by another copy. Otherwise the first existing file wins:
 
-1. `$GCAM_MVSDK_DIR/lib/<arch>`, `$GCAM_MVSDK_DIR/lib`, `$GCAM_MVSDK_DIR`
-2. `./vendor/<version>/lib/<arch>` (relative to the current directory)
-3. `<sdk home>/<version>/lib/<arch>`; sdk home is `$GCAM_MVSDK_HOME`, else the path recorded in
+1. `./vendor/<version>/lib/<arch>` (relative to the current directory)
+2. `<sdk home>/<version>/lib/<arch>`; sdk home is `$GCAM_MVSDK_HOME`, else the path recorded in
    `<venv>/gcam-mvsdk-py-home` by install.bash, else `~/.gcam-mvsdk`
-4. System library directories, then the dynamic loader by bare name
+3. System library directories, then the dynamic loader by bare name
 
 ## Step 1: see what the loader sees
 
@@ -57,6 +57,7 @@ gcam-mvsdk-py doctor
 | Clue in the error or in sdk_status.py | Cause | Fix |
 |---|---|---|
 | Every candidate missing | Not installed | Step 2 |
+| "GCAM_MVSDK_DIR is set to ..., which does not exist" or "holds no MVSDK library" | The variable points at the wrong directory; nothing else is searched while it is set | Point it at the directory that contains `lib/`, or `unset GCAM_MVSDK_DIR` |
 | `lib/x64` missing but `lib/arm` present (or similar) | Wrong architecture directory | `export GCAM_MVSDK_ARCH=<dir>` (e.g. `arm_softfp`) |
 | "wrong ELF class" | 32-bit interpreter with 64-bit library or the reverse | Use a matching interpreter, or set `GCAM_MVSDK_ARCH` |
 | "failed to map segment" or permission denied | SDK on a `noexec` mount | Install to a normal filesystem (`--dest`) |

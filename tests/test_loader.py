@@ -144,17 +144,89 @@ def test_version_ordering_is_numeric(tmp_path):
 
 
 def test_describe_search_lists_every_location(isolated_env):
-    entries = _loader.describe_search(env={"GCAM_MVSDK_DIR": "/opt/sdk"}, arch="x64", system="Linux",
-                                      manifest_versions=[VERSION])
+    entries = _loader.describe_search(env={}, arch="x64", system="Linux", manifest_versions=[VERSION])
     text = "\n".join(entries)
-    env_root = str(Path("/opt/sdk"))  # uses backslashes on Windows
-    assert str(Path("/opt/sdk/lib/x64/libMVSDK.so")) in text
     assert str(isolated_env["work"] / "vendor" / VERSION / "lib" / "x64" / "libMVSDK.so") in text
     assert str(isolated_env["home"] / ".gcam-mvsdk" / VERSION / "lib" / "x64" / "libMVSDK.so") in text
     assert "[dynamic loader]" in text
-    # Order: env, vendor, home, system.
-    idx = [text.index(s) for s in (env_root, "vendor", ".gcam-mvsdk", "system-lib")]
+    # Order: vendor, home, system, dynamic loader.
+    idx = [text.index(s) for s in ("vendor", ".gcam-mvsdk", "system-lib", "[dynamic loader]")]
     assert idx == sorted(idx)
+
+
+def test_describe_search_with_env_dir_lists_only_it(isolated_env):
+    entries = _loader.describe_search(env={"GCAM_MVSDK_DIR": "/opt/sdk"}, arch="x64", system="Linux",
+                                      manifest_versions=[VERSION])
+    assert entries == [
+        "%s  [GCAM_MVSDK_DIR]" % Path("/opt/sdk/lib/x64/libMVSDK.so"),
+        "%s  [GCAM_MVSDK_DIR]" % Path("/opt/sdk/lib/libMVSDK.so"),
+        "%s  [GCAM_MVSDK_DIR]" % Path("/opt/sdk/libMVSDK.so"),
+    ]
+
+
+def _populate_everywhere_but_env(isolated_env):
+    """Libraries in ./vendor, the SDK home and a system directory: all must be ignored."""
+    make_native_lib(isolated_env["work"] / "vendor" / VERSION)
+    make_native_lib(isolated_env["home"] / ".gcam-mvsdk" / VERSION)
+    system = isolated_env["root"] / "system-lib"
+    system.mkdir(exist_ok=True)
+    (system / _loader.library_names()[0]).write_bytes(b"fake")
+
+
+def test_env_dir_is_exclusive_no_fall_through(isolated_env):
+    _populate_everywhere_but_env(isolated_env)
+    empty = isolated_env["root"] / "empty-sdk"
+    empty.mkdir()
+    env = {"GCAM_MVSDK_DIR": str(empty)}
+    entries = _loader.search_entries(env=env, manifest_versions=[VERSION])
+    assert [e.directory for e in entries] == _loader.root_dirs(empty)
+    assert {e.origin for e in entries} == {"GCAM_MVSDK_DIR"}
+    assert _loader.find_library(env=env, manifest_versions=[VERSION]) is None
+    # Without the variable the same tree is found through ./vendor.
+    assert _loader.find_library(env={}, manifest_versions=[VERSION]).origin == "./vendor"
+
+
+def test_wrong_env_dir_is_reported_not_ignored(isolated_env, monkeypatch):
+    _populate_everywhere_but_env(isolated_env)
+    empty = isolated_env["root"] / "empty-sdk"
+    empty.mkdir()
+    monkeypatch.setenv("GCAM_MVSDK_DIR", "  %s  " % empty)  # surrounding blanks are trimmed
+    opened = []
+    monkeypatch.setattr(_loader, "_open", lambda path: opened.append(path) or object())
+    with pytest.raises(SdkNotFound) as info:
+        _loader.open_library()
+    assert opened == []  # neither another copy nor the dynamic loader was tried
+    names = _loader.library_names()
+    expected = ["%s  [GCAM_MVSDK_DIR]" % (d / n) for d in _loader.root_dirs(empty) for n in names]
+    assert info.value.searched == expected
+    message = str(info.value)
+    assert "GCAM_MVSDK_DIR is set to %s, a directory that holds no MVSDK library" % empty in message
+    assert "unset it" in message and "[dynamic loader]" not in message
+
+
+def test_missing_env_dir_says_it_does_not_exist(isolated_env, monkeypatch):
+    missing = isolated_env["root"] / "no-such-sdk"
+    monkeypatch.setenv("GCAM_MVSDK_DIR", str(missing))
+    monkeypatch.setattr(_loader, "_open", lambda path: object())
+    with pytest.raises(SdkNotFound) as info:
+        _loader.open_library()
+    assert "GCAM_MVSDK_DIR is set to %s, which does not exist." % missing in str(info.value)
+
+
+def test_env_dir_with_library_is_used(isolated_env, monkeypatch):
+    root = isolated_env["root"] / "good-sdk"
+    lib = make_native_lib(root)
+    monkeypatch.setenv("GCAM_MVSDK_DIR", str(root))
+    monkeypatch.setattr(_loader, "_open", lambda path: object())
+    _, loc = _loader.open_library()
+    assert Path(loc.path) == lib and loc.origin == "GCAM_MVSDK_DIR" and loc.sdk_root == root
+
+
+def test_blank_env_dir_counts_as_unset(isolated_env, monkeypatch):
+    lib = make_native_lib(isolated_env["home"] / ".gcam-mvsdk" / VERSION)
+    monkeypatch.setenv("GCAM_MVSDK_DIR", "   ")
+    assert _loader.env_sdk_dir() is None
+    assert Path(_loader.find_library(manifest_versions=[VERSION]).path) == lib
 
 
 def test_open_library_raises_sdk_not_found(isolated_env, monkeypatch):

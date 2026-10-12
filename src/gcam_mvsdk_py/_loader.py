@@ -1,13 +1,17 @@
 """Locate and open the HuaTeng MVSDK shared library at runtime.
 
-Search order (first existing file wins):
+If ``GCAM_MVSDK_DIR`` is set (non-empty after trimming), it is the only place
+searched: ``$GCAM_MVSDK_DIR/lib/<arch>``, ``$GCAM_MVSDK_DIR/lib``, then
+``$GCAM_MVSDK_DIR``. A directory without the library is reported as an error,
+never silently replaced by another copy (the same rule as ``gcam-mvsdk-rs``).
 
-1. ``$GCAM_MVSDK_DIR/lib/<arch>``, ``$GCAM_MVSDK_DIR/lib``, ``$GCAM_MVSDK_DIR``
-2. ``./vendor/<version>/lib/<arch>`` (developer checkout, ``scripts/fetch-sdk.sh``)
-3. ``<sdk home>/<version>/lib/<arch>`` (``gcam-mvsdk-py setup``), where the SDK
+Otherwise the search order is (first existing file wins):
+
+1. ``./vendor/<version>/lib/<arch>`` (developer checkout, ``scripts/fetch-sdk.sh``)
+2. ``<sdk home>/<version>/lib/<arch>`` (``gcam-mvsdk-py setup``), where the SDK
    home is ``$GCAM_MVSDK_HOME``, else the directory recorded by ``install.bash``
    in the running virtual environment, else ``~/.gcam-mvsdk``
-4. The system library path (``/lib``, ``/usr/lib``, ... on Linux; ``PATH`` on
+3. The system library path (``/lib``, ``/usr/lib``, ... on Linux; ``PATH`` on
    Windows), and finally the dynamic loader by bare file name.
 
 ``<arch>`` is derived from ``platform.machine()`` and the interpreter's pointer
@@ -200,6 +204,30 @@ def candidate_versions(base: Path, manifest_versions: Sequence[str]) -> List[str
     return sorted(found, key=version_key, reverse=True)
 
 
+def env_sdk_dir(env: Optional[Mapping[str, str]] = None) -> Optional[Path]:
+    """``$GCAM_MVSDK_DIR`` as a path, or ``None`` when it is unset or blank."""
+    env = os.environ if env is None else env
+    value = env.get(ENV_DIR, "").strip()
+    return Path(value).expanduser() if value else None
+
+
+def env_dir_problem(root: Path, system: Optional[str] = None) -> str:
+    """Why ``$GCAM_MVSDK_DIR`` yielded no library, for error messages."""
+    if not root.exists():
+        return "%s is set to %s, which does not exist." % (ENV_DIR, root)
+    if not root.is_dir():
+        return "%s is set to %s, which is not a directory." % (ENV_DIR, root)
+    return "%s is set to %s, a directory that holds no MVSDK library (%s)." % (
+        ENV_DIR, root, " or ".join(library_names(system)))
+
+
+ENV_DIR_HINT = (
+    "While GCAM_MVSDK_DIR is set, no other location is searched. Point it at an extracted SDK "
+    "(the directory that contains lib/), or unset it to use ./vendor/<version>, the SDK home "
+    "(~/.gcam-mvsdk) and the system library path."
+)
+
+
 def root_dirs(root: Path, arch: Optional[str] = None) -> List[Path]:
     """Directories checked inside an SDK root: ``lib/<arch>``, ``lib``, the root itself."""
     arch = arch or detect_arch()
@@ -239,18 +267,19 @@ def search_entries(
     system: Optional[str] = None,
     manifest_versions: Optional[Sequence[str]] = None,
 ) -> List[SearchEntry]:
-    """Every directory the loader inspects, in priority order."""
+    """Every directory the loader inspects, in priority order.
+
+    With ``$GCAM_MVSDK_DIR`` set, only its three directories are returned.
+    """
     env = os.environ if env is None else env
     sysname = _system_name(system)
     arch = arch or detect_arch(env=env, system=system)
+    root = env_sdk_dir(env)
+    if root is not None:
+        return [SearchEntry(d, ENV_DIR, root) for d in root_dirs(root, arch)]
     cwd = cwd if cwd is not None else Path.cwd()
     versions = list(manifest_versions) if manifest_versions is not None else _manifest_versions(system)
     entries: List[SearchEntry] = []
-
-    root_env = env.get(ENV_DIR, "").strip()
-    if root_env:
-        root = Path(root_env).expanduser()
-        entries.extend(SearchEntry(d, ENV_DIR, root) for d in root_dirs(root, arch))
 
     vendor_base = cwd / VENDOR_DIRNAME
     for ver in candidate_versions(vendor_base, versions):
@@ -294,13 +323,18 @@ def describe_search(
     system: Optional[str] = None,
     manifest_versions: Optional[Sequence[str]] = None,
 ) -> List[str]:
-    """Human-readable list of every candidate file path, for error messages."""
+    """Human-readable list of every candidate file path, for error messages.
+
+    With ``$GCAM_MVSDK_DIR`` set this is just its three candidates; the dynamic
+    loader is not consulted then.
+    """
     names = library_names(system)
     out: List[str] = []
     for entry in search_entries(env, cwd, home, arch, system, manifest_versions):
         for name in names:
             out.append("%s  [%s]" % (entry.directory / name, entry.origin))
-    out.extend("%s  [dynamic loader]" % n for n in names)
+    if env_sdk_dir(env) is None:
+        out.extend("%s  [dynamic loader]" % n for n in names)
     return out
 
 
@@ -319,7 +353,8 @@ def _open(path: str) -> ctypes.CDLL:
 def open_library(path: Optional[str] = None) -> Tuple[ctypes.CDLL, LibraryLocation]:
     """Open the vendor library and return ``(library, location)``.
 
-    Raises :class:`SdkNotFound` if nothing usable is found.
+    Raises :class:`SdkNotFound` if nothing usable is found, and also when
+    ``$GCAM_MVSDK_DIR`` is set but holds no library (no fall-through).
     """
     if path:
         p = Path(path).expanduser()
@@ -346,6 +381,10 @@ def open_library(path: Optional[str] = None) -> Tuple[ctypes.CDLL, LibraryLocati
                 "Found %s but the dynamic loader rejected it: %s. Check that it matches this "
                 "interpreter's architecture (%s); GCAM_MVSDK_ARCH overrides the choice." % (loc.path, exc, detect_arch()),
             ) from exc
+
+    root = env_sdk_dir()
+    if root is not None:
+        raise SdkNotFound(describe_search(), env_dir_problem(root), hint=ENV_DIR_HINT)
 
     for name in library_names():
         try:
