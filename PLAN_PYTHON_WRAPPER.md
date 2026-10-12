@@ -364,16 +364,16 @@ gcam-mvsdk-py list
 
 ## Status (2026-10-12)
 
-Implemented in this repository, version 0.1.0, not yet committed:
+Implemented in this repository, version 0.1.0, committed to `main`:
 
 - Packaging: `pyproject.toml` (hatchling, src layout, console script `gcam-mvsdk-py`, extras `opencv`
   and `dev`, version single-sourced from `pyproject.toml`), `sdk-manifest.toml` (byte-identical to the
   Rust copy), `.gitignore`, `LICENSE` (MIT), `README.md` (rewritten for end users), `CLAUDE.md`,
   `IMPLEMENTATION_NOTES.md`, `scripts/fetch-sdk.sh`, `scripts/check-no-vendor-files.sh`, and a CI
-  workflow (tests on Linux/Windows/macOS, shellcheck, artifact check). `python -m build` produces
+  workflow (tests on Linux and Windows, shellcheck, artifact check). `python -m build` produces
   `gcam_mvsdk_py-0.1.0-py3-none-any.whl` with no vendor bytes.
 - `_loader.py` (search order of section 2.2, plus `GCAM_MVSDK_HOME` and the installer's venv marker for
-  the SDK home), `_ffi.py` (structures with sizes asserted against gcc, 63 function signatures, status
+  the SDK home), `_ffi.py` (structures with sizes asserted against gcc, 153 function signatures, status
   table, `CFUNCTYPE`/`WINFUNCTYPE` callback type), `_errors.py`, `api.py` (section 4 API including
   `set_callback`), `setup_cmd.py` (download, SHA-256, extract, `--from`, `--dest`, `--udev`, Windows
   `.rar` branch), `cli.py` (setup, list, rename, setip, info, grab, doctor).
@@ -382,11 +382,15 @@ Implemented in this repository, version 0.1.0, not yet committed:
   `--dev`, `--wheel`, `--with-opencv`, `--no-sudo`). Tested end to end in a scratch HOME without sudo.
 - `.claude/skills/`: sdk-setup, camera-discovery, add-sdk-function, release, hardware-test, with helper
   scripts.
-- Tests: 158 unit tests pass on Python 3.9 and 3.13 without the SDK; hardware tests are gated by
+- `docs/CAPABILITIES.md`: every setting the SDK exposes (94 items in ten sections, same order as the Rust
+  copy; 64 wrapped, 30 reachable raw through `cam.call()`/`cam.query()`), with examples generated from
+  `examples/capabilities.py`. Also `examples/live_view.py` with the `view` extra.
+- Tests: 307 unit tests pass on Python 3.9 and 3.13 without the SDK; hardware tests are gated by
   `GCAM_MVSDK_HW_TEST=1` and have not been run against cameras yet.
 - Deviation: `CameraSetGigePacketSize` does not exist in SDK 2.1.0.49; packet size uses
   `CameraSetTransPackLen`. Other choices are recorded in `IMPLEMENTATION_NOTES.md`.
-- Open: hardware validation on the bench host, the privileged installer path (`setcap`, udev, apt) on a
+- Open: hardware validation on the bench host (including every setting in `docs/CAPABILITIES.md`), the
+  privileged installer path (`setcap`, udev, apt) on a
   machine where `sudo` can be used, automatic location of the DLL after the Windows installer, a recorded
   SHA-256 for the Windows release, `GCAM_MVSDK_HOME` support in `gcam-mvsdk-rs`, porting `camconfig/` and
   the Dockerfile.

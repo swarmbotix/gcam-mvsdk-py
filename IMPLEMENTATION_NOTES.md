@@ -46,8 +46,8 @@ production installer and developer tooling added afterwards.
   reader shared by loader and setup), `_doctor.py`, `_png.py`, and `__main__.py`
   for `python -m gcam_mvsdk_py`.
 * `scripts/check-no-vendor-files.sh` and `.github/workflows/ci.yml` implement the
-  plan's CI binary check; CI runs the unit tests on Linux, Windows, and macOS with
-  Python 3.9 and 3.13.
+  plan's CI binary check; CI runs the unit tests on Linux and Windows with Python 3.9 and
+  3.13 (macOS was dropped from the matrix because the package does not support it).
 
 ## Loader
 
@@ -74,9 +74,9 @@ production installer and developer tooling added afterwards.
   with `gcc -S` from the vendor headers for x86_64 and `-m32` and are asserted in
   `tests/test_struct_sizes.py` (`tSdkCameraCapbility` is 344 bytes on LP64 and
   256 on ILP32; the others are pointer-free).
-* 63 functions are declared, beyond the 25 in the plan (version string,
-  gain, gamma, trigger details, resolution, frame statistics, frame speed, GigE
-  option, callback, and so on). All of them resolve in `libMVSDK.so` 2.1.0.49.
+* 153 functions are declared (63 in the first release, 90 more for the settings
+  reference), well beyond the 25 in the plan. All of them resolve in `libMVSDK.so`
+  2.1.0.49.
   Missing optional symbols are tolerated and reported in `Sdk.missing_functions`.
 * Status messages in the table are this package's own English text; the SDK's
   message is fetched at runtime from `CameraGetErrorString` (`CameraSdkInit(1)`
@@ -164,7 +164,7 @@ production installer and developer tooling added afterwards.
 
 ## Testing
 
-* 158 unit tests, none of which needs the SDK: struct sizes and offsets, status
+* 307 unit tests, none of which needs the SDK: struct sizes and offsets, status
   table, loader search order with a fake tree (monkeypatched `HOME` and cwd),
   manifest parsing and byte identity with the Rust copy, CLI parsing, the
   downloader against a local `http.server` with a synthetic archive, the PNG
@@ -296,3 +296,40 @@ production installer and developer tooling added afterwards.
 * `tests/test_live_view_example.py` loads the script with a stub `cv2` and checks only the
   argument parser, the missing-OpenCV message, and the "not exactly one camera" exit. No test
   opens a window; the window itself has not been exercised (no camera is reachable).
+
+## Settings reference (`docs/CAPABILITIES.md`)
+
+* The document lists 94 settings in ten sections whose order is shared with the
+  `gcam-mvsdk-rs` copy. Each row gives what the setting does, a typical use, the vendor
+  functions, and whether it is wrapped (64) or reachable raw (30). Ranges and defaults are
+  quoted only from header comments; where the headers give none the text says "model
+  dependent" and points to the capability structure.
+* Every code block is copied from `examples/capabilities.py` by
+  `scripts/update_capabilities_doc.py`, which also recounts the summary table.
+  `tests/test_capabilities_examples.py` runs each example against two fake cameras (mono with
+  no optional features, colour with every feature, about 91 % of the example lines; the rest
+  are `except MvError` handlers) and fails if the document is stale.
+* New safe API, chosen for what is commonly needed: auto-exposure target, threshold, limits
+  and window; RGB digital gain setter; anti-flicker and mains frequency; trigger count, delay
+  and period setters; all external-trigger timings plus the capability mask; preset
+  resolutions with binning modes, `set_resolution()`, `set_roi()`; software and hardware
+  mirroring; rotation in degrees; gamma, contrast, saturation, sharpness setters; black and
+  white level (0 to 255 enforced, as the header states); ISP processor, monochrome, noise
+  filter, dead-pixel correction; white balance mode, one-shot white and black balance,
+  white-balance window, colour-temperature mode and presets; LUT mode; digital inputs and
+  outputs through the Ex functions (unified 1 = high); strobe mode, polarity, delay, width;
+  frame resend count (setter only; the SDK has no getter); parameter groups by letter, current
+  group, parameter files, parameter mode; SDK system option and data directory; serial-number
+  levels 1 and 2 (read only; `CameraWriteSN` is deliberately not wrapped); user data;
+  connection-status callback; `capability_summary()`, which `info` now prints.
+* `cam.call()` / `cam.query()` (and `sdk.call()`) are the documented route to the 30 raw
+  items: they check the status like every wrapper and apply caller-supplied `argtypes` only to
+  functions this package does not declare, so a raw call cannot change a declared signature.
+* Binning is exposed through the preset table and the capability masks, not through
+  `CameraSetImageResolutionEx` modes 1 to 4: the header does not say how offset and size relate
+  to the binned output, so the document shows that call as raw with a note to verify the
+  result.
+* Tests: `FakeLib` moved to `tests/fake_mvsdk.py`; `GenericFakeLib` remembers `Set` calls and
+  answers the matching `Get`, so property round trips need no per-function fake.
+  `tests/test_api_settings.py` covers every new property and method.
+* Not verified on hardware: none of the new settings has been exercised against a camera.

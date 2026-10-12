@@ -66,6 +66,7 @@ include = [
     "/tests",
     "/scripts",
     "/examples",
+    "/docs/CAPABILITIES.md",
     "/sdk-manifest.toml",
     "/README.md",
     "/LICENSE",

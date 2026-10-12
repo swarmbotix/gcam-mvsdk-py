@@ -341,8 +341,11 @@ C_SIZES_ILP32: Dict[str, int] = dict(C_SIZES_LP64, tSdkCameraCapbility=256)
 # void (*)(CameraHandle, BYTE* frame, tSdkFrameHead* head, void* context)
 CAMERA_SNAP_PROC = FUNCTYPE(None, c_int, c_void_p, POINTER(tSdkFrameHead), c_void_p)
 
-# void (*)(CameraHandle, UINT msg, UINT param, void* context)
+# void (*)(CameraHandle, UINT msg, UINT param, void* context); msg 0 = disconnected, 1 = restored
 CAMERA_CONNECTION_STATUS_CALLBACK = FUNCTYPE(None, c_int, c_uint, c_uint, c_void_p)
+
+# void (*)(CameraHandle, tSdkFrameEvent* event, void* context); event type 1 = frame start, 2 = frame end
+CAMERA_FRAME_EVENT_CALLBACK = FUNCTYPE(None, c_int, POINTER(tSdkFrameEvent), c_void_p)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -429,6 +432,48 @@ PARAM_MODE_BY_NAME = 1
 PARAM_MODE_BY_SN = 2
 PARAM_MODE_IN_DEVICE = 3
 
+# External trigger signal (emExtTrigSignal) and shutter (emExtTrigShutterMode).
+EXT_TRIG_LEADING_EDGE = 0
+EXT_TRIG_TRAILING_EDGE = 1
+EXT_TRIG_HIGH_LEVEL = 2
+EXT_TRIG_LOW_LEVEL = 3
+EXT_TRIG_EXP_STANDARD = 0
+EXT_TRIG_EXP_GRR = 1
+# Bits of CameraGetExtTrigCapability.
+EXT_TRIG_MASK_GRR_SHUTTER = 1
+EXT_TRIG_MASK_LEVEL_MODE = 2
+EXT_TRIG_MASK_DOUBLE_EDGE = 4
+EXT_TRIG_MASK_BUFFERED_DELAY = 8
+
+# Strobe output (emStrobeControl).
+STROBE_SYNC_WITH_TRIG_AUTO = 0
+STROBE_SYNC_WITH_TRIG_MANUAL = 1
+STROBE_ALWAYS_HIGH = 2
+STROBE_ALWAYS_LOW = 3
+
+# Where the ISP runs (emSdkIspProcessor).
+ISP_PROCESSOR_PC = 0
+ISP_PROCESSOR_DEVICE = 1
+
+# White balance colour temperature mode (emSdkClrTmpMode).
+CT_MODE_AUTO = 0
+CT_MODE_PRESET = 1
+CT_MODE_USER_DEF = 2
+
+# Lookup table mode (emSdkLutMode).
+LUTMODE_PARAM_GEN = 0
+LUTMODE_PRESET = 1
+LUTMODE_USER_DEF = 2
+
+# Mirror direction (emSdkMirrorDirection) and anti-flicker frequency selector.
+MIRROR_DIRECTION_HORIZONTAL = 0
+MIRROR_DIRECTION_VERTICAL = 1
+LIGHT_FREQUENCY_50HZ = 0
+LIGHT_FREQUENCY_60HZ = 1
+
+# Custom resolution index for CameraSetImageResolutionEx.
+RESOLUTION_INDEX_CUSTOM = 0xFF
+
 # CameraSdkInit language selector.
 SDK_LANGUAGE_CHINESE = 0
 SDK_LANGUAGE_ENGLISH = 1
@@ -441,6 +486,7 @@ VERSION_BUFFER_SIZE = 128
 IP_BUFFER_SIZE = 64
 MAC_BUFFER_SIZE = 64
 FRIENDLY_NAME_MAX_BYTES = 31  # 32-byte field including the terminating NUL
+SN_BUFFER_SIZE = 32  # each serial-number level is 32 bytes (CameraReadSN/CameraWriteSN)
 
 # ---------------------------------------------------------------------------
 # Status codes (CameraSdkStatus). Messages are written for this package; the
@@ -588,6 +634,15 @@ FUNCTIONS: Dict[str, Signature] = {
     "CameraGetFirmwareVersion": (_S, [_H, c_char_p]),
     "CameraSaveParameter": (_S, [_H, c_int]),
     "CameraLoadParameter": (_S, [_H, c_int]),
+    "CameraGetCurrentParameterGroup": (_S, [_H, _PINT]),
+    "CameraSaveParameterToFile": (_S, [_H, c_char_p]),
+    "CameraReadParameterFromFile": (_S, [_H, c_char_p]),
+    "CameraSetParameterMode": (_S, [_H, c_int]),
+    "CameraGetParameterMode": (_S, [_H, _PINT]),
+    "CameraSetDataDirectory": (_S, [c_char_p]),
+    "CameraReadSN": (_S, [_H, c_char_p, c_int]),
+    "CameraSaveUserData": (_S, [_H, c_uint, c_char_p, c_int]),
+    "CameraLoadUserData": (_S, [_H, c_uint, c_char_p, c_int]),
     # Exposure and gain
     "CameraSetAeState": (_S, [_H, BOOL]),
     "CameraGetAeState": (_S, [_H, _PINT]),
@@ -600,11 +655,55 @@ FUNCTIONS: Dict[str, Signature] = {
     "CameraSetAnalogGainX": (_S, [_H, c_float]),
     "CameraGetAnalogGainX": (_S, [_H, _PFLOAT]),
     "CameraGetAnalogGainXRange": (_S, [_H, _PFLOAT, _PFLOAT, _PFLOAT]),
+    "CameraSetGain": (_S, [_H, c_int, c_int, c_int]),
     "CameraGetGain": (_S, [_H, _PINT, _PINT, _PINT]),
+    "CameraSetAeTarget": (_S, [_H, c_int]),
+    "CameraGetAeTarget": (_S, [_H, _PINT]),
+    "CameraSetAeThreshold": (_S, [_H, c_int]),
+    "CameraGetAeThreshold": (_S, [_H, _PINT]),
+    "CameraSetAeExposureRange": (_S, [_H, c_double, c_double]),
+    "CameraGetAeExposureRange": (_S, [_H, _PDOUBLE, _PDOUBLE]),
+    "CameraSetAeAnalogGainRange": (_S, [_H, c_int, c_int]),
+    "CameraGetAeAnalogGainRange": (_S, [_H, _PINT, _PINT]),
+    "CameraSetAeWindow": (_S, [_H, c_int, c_int, c_int, c_int]),
+    "CameraGetAeWindow": (_S, [_H, _PINT, _PINT, _PINT, _PINT]),
+    "CameraSetAntiFlick": (_S, [_H, BOOL]),
+    "CameraGetAntiFlick": (_S, [_H, _PINT]),
+    "CameraSetLightFrequency": (_S, [_H, c_int]),
+    "CameraGetLightFrequency": (_S, [_H, _PINT]),
+    # Image processing (ISP)
+    "CameraSetGamma": (_S, [_H, c_int]),
     "CameraGetGamma": (_S, [_H, _PINT]),
+    "CameraSetContrast": (_S, [_H, c_int]),
     "CameraGetContrast": (_S, [_H, _PINT]),
+    "CameraSetSaturation": (_S, [_H, c_int]),
     "CameraGetSaturation": (_S, [_H, _PINT]),
+    "CameraSetSharpness": (_S, [_H, c_int]),
     "CameraGetSharpness": (_S, [_H, _PINT]),
+    "CameraSetBlackLevel": (_S, [_H, c_int]),
+    "CameraGetBlackLevel": (_S, [_H, _PINT]),
+    "CameraSetWhiteLevel": (_S, [_H, c_int]),
+    "CameraGetWhiteLevel": (_S, [_H, _PINT]),
+    "CameraSetIspProcessor": (_S, [_H, c_int]),
+    "CameraGetIspProcessor": (_S, [_H, _PINT]),
+    "CameraSetMonochrome": (_S, [_H, BOOL]),
+    "CameraGetMonochrome": (_S, [_H, _PINT]),
+    "CameraSetNoiseFilter": (_S, [_H, BOOL]),
+    "CameraGetNoiseFilterState": (_S, [_H, _PINT]),
+    "CameraSetCorrectDeadPixel": (_S, [_H, BOOL]),
+    "CameraGetCorrectDeadPixel": (_S, [_H, _PINT]),
+    "CameraSetWbMode": (_S, [_H, BOOL]),
+    "CameraGetWbMode": (_S, [_H, _PINT]),
+    "CameraSetOnceWB": (_S, [_H]),
+    "CameraSetOnceBB": (_S, [_H]),
+    "CameraSetWbWindow": (_S, [_H, c_int, c_int, c_int, c_int]),
+    "CameraGetWbWindow": (_S, [_H, _PINT, _PINT, _PINT, _PINT]),
+    "CameraSetClrTempMode": (_S, [_H, c_int]),
+    "CameraGetClrTempMode": (_S, [_H, _PINT]),
+    "CameraSetPresetClrTemp": (_S, [_H, c_int]),
+    "CameraGetPresetClrTemp": (_S, [_H, _PINT]),
+    "CameraSetLutMode": (_S, [_H, c_int]),
+    "CameraGetLutMode": (_S, [_H, _PINT]),
     # Timing, format, trigger
     "CameraSetFrameRate": (_S, [_H, c_int]),
     "CameraGetFrameRate": (_S, [_H, _PINT]),
@@ -614,14 +713,52 @@ FUNCTIONS: Dict[str, Signature] = {
     "CameraGetIspOutFormat": (_S, [_H, _PUINT]),
     "CameraSetTriggerMode": (_S, [_H, c_int]),
     "CameraGetTriggerMode": (_S, [_H, _PINT]),
+    "CameraSetTriggerDelayTime": (_S, [_H, c_uint]),
     "CameraGetTriggerDelayTime": (_S, [_H, _PUINT]),
+    "CameraSetTriggerCount": (_S, [_H, c_int]),
     "CameraGetTriggerCount": (_S, [_H, _PINT]),
+    "CameraSetTriggerPeriodTime": (_S, [_H, c_uint]),
+    "CameraGetTriggerPeriodTime": (_S, [_H, _PUINT]),
     "CameraSoftTrigger": (_S, [_H]),
+    "CameraSetExtTrigSignalType": (_S, [_H, c_int]),
+    "CameraGetExtTrigSignalType": (_S, [_H, _PINT]),
+    "CameraSetExtTrigShutterType": (_S, [_H, c_int]),
+    "CameraGetExtTrigShutterType": (_S, [_H, _PINT]),
+    "CameraSetExtTrigDelayTime": (_S, [_H, c_uint]),
+    "CameraGetExtTrigDelayTime": (_S, [_H, _PUINT]),
+    "CameraSetExtTrigBufferedDelayTime": (_S, [_H, c_uint]),
+    "CameraGetExtTrigBufferedDelayTime": (_S, [_H, _PUINT]),
+    "CameraSetExtTrigIntervalTime": (_S, [_H, c_uint]),
+    "CameraGetExtTrigIntervalTime": (_S, [_H, _PUINT]),
+    "CameraSetExtTrigJitterTime": (_S, [_H, c_uint]),
+    "CameraGetExtTrigJitterTime": (_S, [_H, _PUINT]),
+    "CameraGetExtTrigCapability": (_S, [_H, _PUINT]),
+    # Geometry
     "CameraGetImageResolution": (_S, [_H, POINTER(tSdkImageResolution)]),
     "CameraSetImageResolution": (_S, [_H, POINTER(tSdkImageResolution)]),
+    "CameraSetImageResolutionEx": (_S, [_H, c_int, c_int, c_uint, c_int, c_int, c_int, c_int, c_int, c_int]),
+    "CameraSetMirror": (_S, [_H, c_int, BOOL]),
+    "CameraGetMirror": (_S, [_H, c_int, _PINT]),
+    "CameraSetHardwareMirror": (_S, [_H, c_int, BOOL]),
+    "CameraGetHardwareMirror": (_S, [_H, c_int, _PINT]),
+    "CameraSetRotate": (_S, [_H, c_int]),
+    "CameraGetRotate": (_S, [_H, _PINT]),
+    # Digital I/O and strobe
+    "CameraGetIOStateEx": (_S, [_H, c_int, _PUINT]),
+    "CameraSetIOStateEx": (_S, [_H, c_int, c_uint]),
+    "CameraGetOutPutIOStateEx": (_S, [_H, c_int, _PUINT]),
+    "CameraSetStrobeMode": (_S, [_H, c_int]),
+    "CameraGetStrobeMode": (_S, [_H, _PINT]),
+    "CameraSetStrobePolarity": (_S, [_H, c_int]),
+    "CameraGetStrobePolarity": (_S, [_H, _PINT]),
+    "CameraSetStrobeDelayTime": (_S, [_H, c_uint]),
+    "CameraGetStrobeDelayTime": (_S, [_H, _PUINT]),
+    "CameraSetStrobePulseWidth": (_S, [_H, c_uint]),
+    "CameraGetStrobePulseWidth": (_S, [_H, _PUINT]),
     # GigE transport packet size (selected by index into pPackLenDesc).
     "CameraSetTransPackLen": (_S, [_H, c_int]),
     "CameraGetTransPackLen": (_S, [_H, _PINT]),
+    "CameraSetFrameResendCount": (_S, [_H, c_int]),
     # Streaming
     "CameraPlay": (_S, [_H]),
     "CameraPause": (_S, [_H]),
@@ -633,6 +770,8 @@ FUNCTIONS: Dict[str, Signature] = {
     "CameraFlipFrameBuffer": (_S, [c_void_p, _PHEAD, c_int]),
     "CameraGetFrameStatistic": (_S, [_H, POINTER(tSdkFrameStatistic)]),
     "CameraSetCallbackFunction": (_S, [_H, CAMERA_SNAP_PROC, c_void_p, c_void_p]),
+    "CameraSetConnectionStatusCallback": (_S, [_H, CAMERA_CONNECTION_STATUS_CALLBACK, c_void_p]),
+    "CameraSetFrameEventCallback": (_S, [_H, CAMERA_FRAME_EVENT_CALLBACK, c_void_p]),
 }
 
 # Functions without which the safe layer cannot work at all.

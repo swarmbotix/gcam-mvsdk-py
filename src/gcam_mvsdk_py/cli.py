@@ -355,6 +355,8 @@ def collect_info(cam: Any) -> Dict[str, Any]:
         "resolutions": [list(r) for r in cam.resolutions()],
         "media_types": [[i, _ffi.media_type_name(t), d] for i, t, d in cam.media_types()],
         "trigger_modes": [list(t) for t in cam.trigger_modes()],
+        "ext_trigger_capability": _safe(lambda: cam.ext_trigger_capability),
+        "capability": cam.capability_summary(),
     }
     if dev.is_gige:
         data["gige"] = _safe(lambda: dict(dev.gige_ip()._asdict(), **dev.gige_mac()._asdict()))
@@ -413,6 +415,12 @@ def print_info(d: Dict[str, Any]) -> None:
         print("  Raw formats   : %s" % ", ".join("[%d] %s" % (i, n) for i, n, _ in d["media_types"]))
     if d["resolutions"]:
         print("  Preset sizes  : %s" % ", ".join("[%d] %dx%d" % (i, w, h) for i, w, h, _ in d["resolutions"]))
+
+    if "capability" in d:
+        print("\n-- Capability (what this model supports) " + "-" * 11)
+        for key, value in d["capability"].items():
+            print("  %-26s: %s" % (key, value))
+        print("  %-26s: %s" % ("ext_trigger_capability", d.get("ext_trigger_capability")))
 
     if "gige" in d:
         print("\n-- GigE " + "-" * 44)

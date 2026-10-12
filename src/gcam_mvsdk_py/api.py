@@ -24,8 +24,8 @@ import threading
 import traceback
 import warnings
 import weakref
-from ctypes import byref, c_double, c_float, c_int, c_uint, c_void_p, create_string_buffer
-from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple, Union
+from ctypes import POINTER, byref, c_double, c_float, c_int, c_uint, c_void_p, create_string_buffer
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -111,6 +111,113 @@ class Resolution(NamedTuple):
     description: str
 
 
+class ResolutionPreset(NamedTuple):
+    """One entry of the camera's preset resolution table (``tSdkImageResolution``).
+
+    ``bin_sum_mode``, ``bin_average_mode`` and ``skip_mode`` are the raw values the
+    SDK reports; 0 means the preset does not use that mode. ``fov_*`` is the
+    sensor area the preset reads out, ``width``/``height`` the output size.
+    """
+
+    index: int
+    width: int
+    height: int
+    description: str
+    bin_sum_mode: int
+    bin_average_mode: int
+    skip_mode: int
+    fov_x: int
+    fov_y: int
+    fov_width: int
+    fov_height: int
+
+
+_PARAMETER_GROUPS = {"A": _ffi.PARAMETER_TEAM_A, "B": _ffi.PARAMETER_TEAM_B, "C": _ffi.PARAMETER_TEAM_C,
+                     "D": _ffi.PARAMETER_TEAM_D, "DEFAULT": _ffi.PARAMETER_TEAM_DEFAULT}
+
+
+def _parameter_group(group: Union[int, str], allow_default: bool) -> int:
+    """Translate ``"A"``..``"D"`` (or ``"default"`` when loading) or an int to the SDK value."""
+    if isinstance(group, str):
+        key = group.strip().upper()
+        if key not in _PARAMETER_GROUPS or (key == "DEFAULT" and not allow_default):
+            allowed = "A, B, C, D" + (", default" if allow_default else "")
+            raise ValueError("parameter group must be one of %s, not %r" % (allowed, group))
+        return _PARAMETER_GROUPS[key]
+    value = int(group)
+    valid = {0, 1, 2, 3} | ({_ffi.PARAMETER_TEAM_DEFAULT} if allow_default else set())
+    if value not in valid:
+        raise ValueError("parameter group %d is not valid" % value)
+    return value
+
+
+def _raw_function(lib: Any, name: str, argtypes: Optional[Sequence[Any]], prefix: Sequence[Any]) -> Callable[..., Any]:
+    """Look up ``name`` in the library and, for undeclared functions, apply ``argtypes``."""
+    try:
+        fn = getattr(lib, name)
+    except AttributeError:
+        raise FunctionUnavailable(name) from None
+    if argtypes is not None and name not in _ffi.FUNCTIONS:
+        fn.argtypes = list(prefix) + list(argtypes)
+        fn.restype = _ffi.CameraSdkStatus
+    return fn
+
+
+def _int_property(get_name: str, set_name: str, doc: str, low: Optional[int] = None, high: Optional[int] = None) -> property:
+    """Read/write property over a ``Get(handle, int*)`` / ``Set(handle, int)`` pair."""
+
+    def fget(self: "Camera") -> int:
+        return int(self._get(get_name, c_int))
+
+    def fset(self: "Camera", value: int) -> None:
+        value = int(value)
+        if (low is not None and value < low) or (high is not None and value > high):
+            raise ValueError("%s must be in [%s, %s], got %d" % (set_name, low, high, value))
+        self._call(set_name, value)
+
+    return property(fget, fset, doc=doc)
+
+
+def _uint_property(get_name: str, set_name: str, doc: str) -> property:
+    """Read/write property over a ``Get(handle, UINT*)`` / ``Set(handle, UINT)`` pair (microseconds etc.)."""
+
+    def fget(self: "Camera") -> int:
+        return int(self._get(get_name, c_uint))
+
+    def fset(self: "Camera", value: int) -> None:
+        if int(value) < 0:
+            raise ValueError("%s takes a non-negative value, got %d" % (set_name, int(value)))
+        self._call(set_name, int(value))
+
+    return property(fget, fset, doc=doc)
+
+
+def _bool_property(get_name: str, set_name: str, doc: str) -> property:
+    """Read/write property over a ``Get(handle, BOOL*)`` / ``Set(handle, BOOL)`` pair."""
+
+    def fget(self: "Camera") -> bool:
+        return bool(self._get(get_name, c_int))
+
+    def fset(self: "Camera", enabled: bool) -> None:
+        self._call(set_name, 1 if enabled else 0)
+
+    return property(fget, fset, doc=doc)
+
+
+def _direction_property(get_name: str, set_name: str, direction: int, doc: str) -> property:
+    """Read/write property over ``Get(handle, dir, BOOL*)`` / ``Set(handle, dir, BOOL)`` (mirroring)."""
+
+    def fget(self: "Camera") -> bool:
+        value = c_int()
+        self._call(get_name, direction, byref(value))
+        return bool(value.value)
+
+    def fset(self: "Camera", enabled: bool) -> None:
+        self._call(set_name, direction, 1 if enabled else 0)
+
+    return property(fget, fset, doc=doc)
+
+
 class Sdk:
     """An opened and initialized MVSDK library.
 
@@ -155,6 +262,24 @@ class Sdk:
     def error_string(self, status: int) -> str:
         """Message for ``status`` from ``CameraGetErrorString``."""
         return error_from_status(self._lib, status).message
+
+    def call(self, name: str, *args: Any, argtypes: Optional[Sequence[Any]] = None) -> None:
+        """Call a library-level SDK function (no camera handle) and check its status.
+
+        ``argtypes`` declares the C parameter types of a function this package
+        does not declare itself; declared functions keep their own signature.
+        Raises :class:`MvError` on a non-zero status.
+        """
+        fn = _raw_function(self._lib, name, argtypes, ())
+        check(self._lib, fn(*args), name)
+
+    def set_sys_option(self, name: str, value: Any) -> None:
+        """``CameraSetSysOption``: SDK-wide option, normally set before opening a camera."""
+        self._call("CameraSetSysOption", encode_c_string(name), encode_c_string(str(value)))
+
+    def set_data_directory(self, path: str) -> None:
+        """``CameraSetDataDirectory``: where the SDK keeps its .config files; set before opening a camera."""
+        self._call("CameraSetDataDirectory", encode_c_string(str(path)))
 
     # -- library-level calls ---------------------------------------------
 
@@ -374,6 +499,7 @@ class Camera:
         self._closed = False
         self._callback: Optional[Any] = None  # keeps the CFUNCTYPE wrapper alive
         self._callback_fn: Optional[Callable[["Frame"], None]] = None
+        self._connection_callback: Optional[Any] = None  # keeps the wrapper alive
         self._frames: "weakref.WeakSet[Frame]" = weakref.WeakSet()
         self._capability: Optional[_ffi.tSdkCameraCapbility] = None
 
@@ -419,6 +545,7 @@ class Camera:
             self._capability = None
             self._callback = None
             self._callback_fn = None
+            self._connection_callback = None
 
     def _call(self, name: str, *args: Any) -> None:
         self._sdk._call(name, self.handle, *args)
@@ -427,6 +554,41 @@ class Camera:
         value = ctype()
         self._call(name, byref(value))
         return value.value
+
+    def _get_many(self, name: str, *ctypes_: Any) -> Tuple[Any, ...]:
+        values = [t() for t in ctypes_]
+        self._call(name, *[byref(v) for v in values])
+        return tuple(v.value for v in values)
+
+    @property
+    def sdk(self) -> Sdk:
+        """The :class:`Sdk` this camera was opened with."""
+        return self._sdk
+
+    # -- raw access to functions without a wrapper ----------------------------
+
+    def call(self, name: str, *args: Any, argtypes: Optional[Sequence[Any]] = None) -> None:
+        """Call ``name(handle, *args)`` and raise :class:`MvError` on a non-zero status.
+
+        For a function this package does not declare, pass ``argtypes`` for the
+        parameters after the handle, for example ``argtypes=[c_int, c_double]``.
+        Unsupported features usually fail with status -4 (not supported).
+        """
+        fn = _raw_function(self._lib, name, argtypes, (_ffi.CameraHandle,))
+        check(self._lib, fn(self.handle, *args), name)
+
+    def query(self, name: str, *out_types: Any, args: Sequence[Any] = (), argtypes: Optional[Sequence[Any]] = None) -> Any:
+        """Call ``name(handle, *args, &out1, &out2, ...)`` and return the output values.
+
+        ``out_types`` are ctypes scalar types such as ``c_int`` or ``c_double``;
+        one output is returned as a value, several as a tuple. ``argtypes`` covers
+        only ``args`` (the inputs); the output pointer types are added for you.
+        """
+        outs = [t() for t in out_types]
+        full = None if argtypes is None else list(argtypes) + [POINTER(t) for t in out_types]
+        self.call(name, *args, *[byref(o) for o in outs], argtypes=full)
+        values = tuple(o.value for o in outs)
+        return values[0] if len(values) == 1 else values
 
     # -- identity ---------------------------------------------------------
 
@@ -453,6 +615,40 @@ class Camera:
         buf = create_string_buffer(_ffi.VERSION_BUFFER_SIZE)
         self._call("CameraGetFirmwareVersion", buf)
         return decode_c_string(buf.raw)
+
+    def read_sn(self, level: int) -> str:
+        """Read serial-number level 1 or 2 (``CameraReadSN``); level 0 is the factory serial.
+
+        Writing serial numbers (``CameraWriteSN``) is deliberately not wrapped.
+        """
+        if level not in (1, 2):
+            raise ValueError("serial-number level must be 1 or 2")
+        buf = create_string_buffer(_ffi.SN_BUFFER_SIZE + 1)
+        self._call("CameraReadSN", buf, int(level))
+        return decode_c_string(buf.raw)
+
+    @property
+    def user_data_size(self) -> int:
+        """Bytes of user data the camera can store (``iUserDataMaxLen``; 0 = none)."""
+        return int(self.capability().iUserDataMaxLen)
+
+    def _check_user_data_range(self, offset: int, length: int) -> None:
+        size = self.user_data_size
+        if offset < 0 or length < 0 or offset + length > size:
+            raise ValueError("user data range [%d, %d) exceeds the camera's %d bytes" % (offset, offset + length, size))
+
+    def read_user_data(self, offset: int, length: int) -> bytes:
+        """Read ``length`` bytes of user data stored in the camera (``CameraLoadUserData``)."""
+        self._check_user_data_range(int(offset), int(length))
+        buf = create_string_buffer(int(length))
+        self._call("CameraLoadUserData", int(offset), buf, int(length))
+        return buf.raw[: int(length)]
+
+    def write_user_data(self, offset: int, data: bytes) -> None:
+        """Store ``data`` in the camera's non-volatile user area (``CameraSaveUserData``)."""
+        data = bytes(data)
+        self._check_user_data_range(int(offset), len(data))
+        self._call("CameraSaveUserData", int(offset), create_string_buffer(data, len(data)), len(data))
 
     # -- capability -------------------------------------------------------
 
@@ -500,6 +696,91 @@ class Camera:
             d = cap.pImageSizeDesc[i]
             out.append(Resolution(d.iIndex, d.iWidth, d.iHeight, decode_c_string(d.acDescription)))
         return out
+
+    def resolution_presets(self) -> List[ResolutionPreset]:
+        """The preset resolution table with binning/skip modes and sensor field of view."""
+        cap = self.capability()
+        out = []
+        for i in range(max(0, cap.iImageSizeDesc)):
+            d = cap.pImageSizeDesc[i]
+            out.append(ResolutionPreset(
+                d.iIndex, d.iWidth, d.iHeight, decode_c_string(d.acDescription),
+                int(d.uBinSumMode), int(d.uBinAverageMode), int(d.uSkipMode),
+                d.iHOffsetFOV, d.iVOffsetFOV, d.iWidthFOV, d.iHeightFOV,
+            ))
+        return out
+
+    def binning_modes(self) -> Dict[str, List[int]]:
+        """Supported binning/skip factors from the capability masks (bit 0 = 2x2, bit 1 = 3x3, ...)."""
+        rr = self.capability().sResolutionRange
+
+        def factors(mask: int) -> List[int]:
+            return [bit + 2 for bit in range(32) if mask & (1 << bit)]
+
+        return {
+            "sum": factors(int(rr.uBinSumModeMask)),
+            "average": factors(int(rr.uBinAverageModeMask)),
+            "skip": factors(int(rr.uSkipModeMask)),
+        }
+
+    def color_temperature_presets(self) -> List[IndexedDescription]:
+        """Preset colour temperatures for white balance (``pClrTempDesc``)."""
+        cap = self.capability()
+        return [
+            IndexedDescription(cap.pClrTempDesc[i].iIndex, decode_c_string(cap.pClrTempDesc[i].acDescription))
+            for i in range(max(0, cap.iClrTempDesc))
+        ]
+
+    def capability_summary(self) -> Dict[str, Any]:
+        """The capability struct as plain data: which features exist and their ranges.
+
+        This is what ``gcam-mvsdk-py info`` prints under "Capability". Values come
+        from the camera; units follow the header (exposure range in sensor lines,
+        analog gain in steps of ``analog_gain_step``, digital gain 100 = 1.0x).
+        """
+        cap = self.capability()
+        ed, rr, isp, rgb = cap.sExposeDesc, cap.sResolutionRange, cap.sIspCapacity, cap.sRgbGainRange
+        return {
+            "mono_sensor": bool(isp.bMonoSensor),
+            "auto_exposure": bool(isp.bAutoExposure),
+            "manual_exposure": bool(isp.bManualExposure),
+            "anti_flicker": bool(isp.bAntiFlick),
+            "auto_white_balance": bool(isp.bAutoWb),
+            "once_white_balance": bool(isp.bWbOnce),
+            "device_isp": bool(isp.bDeviceIsp),
+            "device_isp_forced": bool(isp.bForceUseDeviceIsp),
+            "hardware_zoom": bool(isp.bZoomHD),
+            "ae_target_range": [int(ed.uiTargetMin), int(ed.uiTargetMax)],
+            "analog_gain_range": [int(ed.uiAnalogGainMin), int(ed.uiAnalogGainMax)],
+            "analog_gain_step": round(float(ed.fAnalogGainStep), 6),
+            "exposure_range_lines": [int(ed.uiExposeTimeMin), int(ed.uiExposeTimeMax)],
+            "rgb_gain_range": [[rgb.iRGainMin, rgb.iRGainMax], [rgb.iGGainMin, rgb.iGGainMax], [rgb.iBGainMin, rgb.iBGainMax]],
+            "gamma_range": [cap.sGammaRange.iMin, cap.sGammaRange.iMax],
+            "contrast_range": [cap.sContrastRange.iMin, cap.sContrastRange.iMax],
+            "saturation_range": [cap.sSaturationRange.iMin, cap.sSaturationRange.iMax],
+            "sharpness_range": [cap.sSharpnessRange.iMin, cap.sSharpnessRange.iMax],
+            "width_range": [rr.iWidthMin, rr.iWidthMax],
+            "height_range": [rr.iHeightMin, rr.iHeightMax],
+            "binning": self.binning_modes(),
+            "resolution_presets": len(self.resolution_presets()),
+            "trigger_modes": [t.description for t in self.trigger_modes()],
+            "frame_speeds": [f.description for f in self.frame_speeds()],
+            "packet_sizes": [p.size for p in self.packet_sizes()],
+            "color_temperature_presets": [c.description for c in self.color_temperature_presets()],
+            "preset_luts": int(cap.iPresetLut),
+            "bayer_algorithms_pc": int(cap.iBayerDecAlmSwDesc),
+            "bayer_algorithms_device": int(cap.iBayerDecAlmHdDesc),
+            "inputs": int(cap.iInputIoCounts),
+            "outputs": int(cap.iOutputIoCounts),
+            "user_data_bytes": int(cap.iUserDataMaxLen),
+            "parameters_in_device": bool(cap.bParamInDevice),
+        }
+
+    @property
+    def io_counts(self) -> Tuple[int, int]:
+        """Number of programmable ``(inputs, outputs)`` (``iInputIoCounts``, ``iOutputIoCounts``)."""
+        cap = self.capability()
+        return (int(cap.iInputIoCounts), int(cap.iOutputIoCounts))
 
     def media_types(self) -> List[Tuple[int, int, str]]:
         """``(index, media_type, description)`` for each sensor output type."""
@@ -566,28 +847,136 @@ class Camera:
     def analog_gain_x(self, value: float) -> None:
         self._call("CameraSetAnalogGainX", float(value))
 
+    def analog_gain_x_range(self) -> Tuple[float, float, float]:
+        """``(min, max, step)`` of :attr:`analog_gain_x` (``CameraGetAnalogGainXRange``)."""
+        return self._get_many("CameraGetAnalogGainXRange", c_float, c_float, c_float)
+
     @property
     def digital_gain(self) -> Tuple[int, int, int]:
-        """Per-channel digital gain ``(r, g, b)``."""
-        r, g, b = c_int(), c_int(), c_int()
-        self._call("CameraGetGain", byref(r), byref(g), byref(b))
-        return (r.value, g.value, b.value)
+        """Per-channel digital gain ``(r, g, b)``; 100 means 1.0x (``CameraSetGain``/``CameraGetGain``).
+
+        The range is in the capability struct, ``sRgbGainRange``.
+        """
+        return self._get_many("CameraGetGain", c_int, c_int, c_int)
+
+    @digital_gain.setter
+    def digital_gain(self, rgb: Sequence[int]) -> None:
+        r, g, b = (int(v) for v in rgb)
+        self._call("CameraSetGain", r, g, b)
+
+    ae_target = _int_property(
+        "CameraGetAeTarget", "CameraSetAeTarget",
+        "Auto-exposure brightness target; range in ``capability().sExposeDesc`` (uiTargetMin/Max).")
+    ae_threshold = _int_property(
+        "CameraGetAeThreshold", "CameraSetAeThreshold",
+        "Auto exposure stops adjusting while abs(target - brightness) is below this value.")
 
     @property
-    def gamma(self) -> int:
-        return int(self._get("CameraGetGamma", c_int))
+    def ae_exposure_range_us(self) -> Tuple[float, float]:
+        """``(min, max)`` exposure in microseconds that auto exposure may use."""
+        return self._get_many("CameraGetAeExposureRange", c_double, c_double)
+
+    @ae_exposure_range_us.setter
+    def ae_exposure_range_us(self, limits: Sequence[float]) -> None:
+        lo, hi = (float(v) for v in limits)
+        self._call("CameraSetAeExposureRange", lo, hi)
 
     @property
-    def contrast(self) -> int:
-        return int(self._get("CameraGetContrast", c_int))
+    def ae_analog_gain_range(self) -> Tuple[int, int]:
+        """``(min, max)`` analog gain (in :attr:`analog_gain` units) that auto exposure may use."""
+        return self._get_many("CameraGetAeAnalogGainRange", c_int, c_int)
+
+    @ae_analog_gain_range.setter
+    def ae_analog_gain_range(self, limits: Sequence[int]) -> None:
+        lo, hi = (int(v) for v in limits)
+        self._call("CameraSetAeAnalogGainRange", lo, hi)
 
     @property
-    def saturation(self) -> int:
-        return int(self._get("CameraGetSaturation", c_int))
+    def ae_window(self) -> Tuple[int, int, int, int]:
+        """Auto-exposure reference window ``(x, y, width, height)``.
+
+        All zeros selects the centred half-size window, which follows resolution changes.
+        """
+        return self._get_many("CameraGetAeWindow", c_int, c_int, c_int, c_int)
+
+    @ae_window.setter
+    def ae_window(self, window: Sequence[int]) -> None:
+        x, y, w, h = (int(v) for v in window)
+        self._call("CameraSetAeWindow", x, y, w, h)
+
+    anti_flicker = _bool_property(
+        "CameraGetAntiFlick", "CameraSetAntiFlick",
+        "Anti-flicker for auto exposure (no effect in manual exposure); see ``capability().sIspCapacity.bAntiFlick``.")
 
     @property
-    def sharpness(self) -> int:
-        return int(self._get("CameraGetSharpness", c_int))
+    def light_frequency_hz(self) -> int:
+        """Mains frequency anti-flicker works against: 50 or 60 (``CameraSetLightFrequency``)."""
+        return 50 if self._get("CameraGetLightFrequency", c_int) == _ffi.LIGHT_FREQUENCY_50HZ else 60
+
+    @light_frequency_hz.setter
+    def light_frequency_hz(self, hz: int) -> None:
+        selector = {50: _ffi.LIGHT_FREQUENCY_50HZ, 60: _ffi.LIGHT_FREQUENCY_60HZ}.get(int(hz))
+        if selector is None:
+            raise ValueError("light frequency must be 50 or 60 Hz")
+        self._call("CameraSetLightFrequency", selector)
+
+    # -- image processing (ISP) -------------------------------------------
+
+    gamma = _int_property(
+        "CameraGetGamma", "CameraSetGamma",
+        "Gamma used when the LUT is generated from parameters (``lut_mode`` 0); range ``sGammaRange``.")
+    contrast = _int_property(
+        "CameraGetContrast", "CameraSetContrast",
+        "Contrast used when the LUT is generated from parameters (``lut_mode`` 0); range ``sContrastRange``.")
+    saturation = _int_property(
+        "CameraGetSaturation", "CameraSetSaturation",
+        "Colour saturation, 100 = unchanged; no effect on mono cameras; range ``sSaturationRange``.")
+    sharpness = _int_property(
+        "CameraGetSharpness", "CameraSetSharpness",
+        "Sharpening, 0 = off; range ``sSharpnessRange`` (the header says usually 0 to 100).")
+    black_level = _int_property(
+        "CameraGetBlackLevel", "CameraSetBlackLevel", "Black level reference, 0 to 255 (default 0).", 0, 255)
+    white_level = _int_property(
+        "CameraGetWhiteLevel", "CameraSetWhiteLevel", "White level reference, 0 to 255 (default 255).", 0, 255)
+    isp_processor = _int_property(
+        "CameraGetIspProcessor", "CameraSetIspProcessor",
+        "Where the ISP runs: ``ISP_PROCESSOR_PC`` (0) or ``ISP_PROCESSOR_DEVICE`` (1, if ``bDeviceIsp``).")
+    monochrome = _bool_property(
+        "CameraGetMonochrome", "CameraSetMonochrome", "Convert colour images to grey in the ISP.")
+    noise_filter = _bool_property(
+        "CameraGetNoiseFilterState", "CameraSetNoiseFilter", "Enable the ISP noise filter.")
+    dead_pixel_correction = _bool_property(
+        "CameraGetCorrectDeadPixel", "CameraSetCorrectDeadPixel", "Enable dead-pixel correction.")
+    auto_white_balance = _bool_property(
+        "CameraGetWbMode", "CameraSetWbMode",
+        "Continuous auto white balance (``bAutoWb``); False = manual, use :meth:`white_balance_once`.")
+    color_temperature_mode = _int_property(
+        "CameraGetClrTempMode", "CameraSetClrTempMode",
+        "White-balance colour temperature mode: ``CT_MODE_AUTO``, ``CT_MODE_PRESET``, ``CT_MODE_USER_DEF``.")
+    preset_color_temperature = _int_property(
+        "CameraGetPresetClrTemp", "CameraSetPresetClrTemp",
+        "Index into :meth:`color_temperature_presets`, used in ``CT_MODE_PRESET``.")
+    lut_mode = _int_property(
+        "CameraGetLutMode", "CameraSetLutMode",
+        "``LUTMODE_PARAM_GEN`` (gamma/contrast), ``LUTMODE_PRESET`` or ``LUTMODE_USER_DEF``.")
+
+    def white_balance_once(self) -> None:
+        """One white balance in manual mode; takes effect with the next frame (``CameraSetOnceWB``)."""
+        self._call("CameraSetOnceWB")
+
+    def black_balance_once(self) -> None:
+        """One black balance (``CameraSetOnceBB``)."""
+        self._call("CameraSetOnceBB")
+
+    @property
+    def wb_window(self) -> Tuple[int, int, int, int]:
+        """White-balance reference window ``(x, y, width, height)``."""
+        return self._get_many("CameraGetWbWindow", c_int, c_int, c_int, c_int)
+
+    @wb_window.setter
+    def wb_window(self, window: Sequence[int]) -> None:
+        x, y, w, h = (int(v) for v in window)
+        self._call("CameraSetWbWindow", x, y, w, h)
 
     # -- timing, format, trigger -----------------------------------------
 
@@ -627,13 +1016,38 @@ class Camera:
     def trigger_mode(self, mode: int) -> None:
         self._call("CameraSetTriggerMode", int(mode))
 
-    @property
-    def trigger_delay_us(self) -> int:
-        return int(self._get("CameraGetTriggerDelayTime", c_uint))
+    trigger_count = _int_property(
+        "CameraGetTriggerCount", "CameraSetTriggerCount",
+        "Frames captured per trigger (software and hardware trigger); default 1.", 1, None)
+    trigger_delay_us = _uint_property(
+        "CameraGetTriggerDelayTime", "CameraSetTriggerDelayTime",
+        "Delay in microseconds between a hardware trigger and capture (only some models).")
+    trigger_period_us = _uint_property(
+        "CameraGetTriggerPeriodTime", "CameraSetTriggerPeriodTime",
+        "Interval in microseconds between frames when one trigger captures several (only some models).")
+    ext_trigger_signal = _int_property(
+        "CameraGetExtTrigSignalType", "CameraSetExtTrigSignalType",
+        "``EXT_TRIG_LEADING_EDGE`` (default), ``EXT_TRIG_TRAILING_EDGE``, ``EXT_TRIG_HIGH_LEVEL``, ``EXT_TRIG_LOW_LEVEL``.")
+    ext_trigger_shutter = _int_property(
+        "CameraGetExtTrigShutterType", "CameraSetExtTrigShutterType",
+        "``EXT_TRIG_EXP_STANDARD`` (default) or ``EXT_TRIG_EXP_GRR`` (some rolling-shutter models).")
+    ext_trigger_delay_us = _uint_property(
+        "CameraGetExtTrigDelayTime", "CameraSetExtTrigDelayTime",
+        "Delay in microseconds after an external trigger before capture; default 0.")
+    ext_trigger_buffered_delay_us = _uint_property(
+        "CameraGetExtTrigBufferedDelayTime", "CameraSetExtTrigBufferedDelayTime",
+        "Like ``ext_trigger_delay_us`` but triggers arriving during the delay are queued (up to 128).")
+    ext_trigger_interval_us = _uint_property(
+        "CameraGetExtTrigIntervalTime", "CameraSetExtTrigIntervalTime",
+        "External trigger signal interval time in microseconds; default 0.")
+    ext_trigger_jitter_us = _uint_property(
+        "CameraGetExtTrigJitterTime", "CameraSetExtTrigJitterTime",
+        "Debounce time in microseconds for the external trigger input; default 0.")
 
     @property
-    def trigger_count(self) -> int:
-        return int(self._get("CameraGetTriggerCount", c_int))
+    def ext_trigger_capability(self) -> int:
+        """Bit mask of ``EXT_TRIG_MASK_*`` features this model supports (``CameraGetExtTrigCapability``)."""
+        return int(self._get("CameraGetExtTrigCapability", c_uint))
 
     @property
     def resolution(self) -> Tuple[int, int]:
@@ -641,6 +1055,89 @@ class Camera:
         res = _ffi.tSdkImageResolution()
         self._call("CameraGetImageResolution", byref(res))
         return (res.iWidth, res.iHeight)
+
+    def set_resolution(self, index: int) -> None:
+        """Select a preset from :meth:`resolution_presets` by its index (``CameraSetImageResolution``)."""
+        cap = self.capability()
+        for i in range(max(0, cap.iImageSizeDesc)):
+            if cap.pImageSizeDesc[i].iIndex == int(index):
+                preset = _ffi.tSdkImageResolution.from_buffer_copy(cap.pImageSizeDesc[i])
+                self._call("CameraSetImageResolution", byref(preset))
+                return
+        known = ", ".join(str(p.index) for p in self.resolution_presets()) or "none"
+        raise ValueError("no preset resolution with index %d (presets: %s)" % (int(index), known))
+
+    def set_roi(self, x: int, y: int, width: int, height: int) -> None:
+        """Read out only a sensor region (custom resolution, ``CameraSetImageResolutionEx``).
+
+        The SDK may adjust the values to the sensor's alignment; read
+        :attr:`resolution` afterwards. ``set_roi(0, 0, *cam.max_size)`` restores full frame.
+        """
+        x, y, width, height = int(x), int(y), int(width), int(height)
+        max_w, max_h = self.max_size
+        if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > max_w or y + height > max_h:
+            raise ValueError("ROI %dx%d at (%d, %d) does not fit the %dx%d sensor" % (width, height, x, y, max_w, max_h))
+        self._call("CameraSetImageResolutionEx", _ffi.RESOLUTION_INDEX_CUSTOM, 0, 0, x, y, width, height, 0, 0)
+
+    mirror_horizontal = _direction_property(
+        "CameraGetMirror", "CameraSetMirror", _ffi.MIRROR_DIRECTION_HORIZONTAL, "Mirror left-right in the ISP.")
+    mirror_vertical = _direction_property(
+        "CameraGetMirror", "CameraSetMirror", _ffi.MIRROR_DIRECTION_VERTICAL, "Mirror top-bottom in the ISP.")
+    hardware_mirror_horizontal = _direction_property(
+        "CameraGetHardwareMirror", "CameraSetHardwareMirror", _ffi.MIRROR_DIRECTION_HORIZONTAL,
+        "Mirror left-right in the camera itself (only some GigE and USB3 models).")
+    hardware_mirror_vertical = _direction_property(
+        "CameraGetHardwareMirror", "CameraSetHardwareMirror", _ffi.MIRROR_DIRECTION_VERTICAL,
+        "Mirror top-bottom in the camera itself (only some GigE and USB3 models).")
+
+    @property
+    def rotation_deg(self) -> int:
+        """Counter-clockwise rotation applied by the ISP: 0, 90, 180 or 270 (``CameraSetRotate``)."""
+        return int(self._get("CameraGetRotate", c_int)) * 90
+
+    @rotation_deg.setter
+    def rotation_deg(self, degrees: int) -> None:
+        if int(degrees) not in (0, 90, 180, 270):
+            raise ValueError("rotation must be 0, 90, 180 or 270 degrees")
+        self._call("CameraSetRotate", int(degrees) // 90)
+
+    # -- digital I/O and strobe -------------------------------------------
+
+    def _check_io(self, index: int, outputs: bool) -> int:
+        inputs, outs = self.io_counts
+        count = outs if outputs else inputs
+        if not 0 <= int(index) < count:
+            kind = "output" if outputs else "input"
+            raise ValueError("%s index %d out of range; this camera has %d %ss" % (kind, int(index), count, kind))
+        return int(index)
+
+    def get_input(self, index: int) -> bool:
+        """Level of programmable input ``index``: True = high (``CameraGetIOStateEx``)."""
+        state = c_uint()
+        self._call("CameraGetIOStateEx", self._check_io(index, False), byref(state))
+        return bool(state.value)
+
+    def get_output(self, index: int) -> bool:
+        """Level of programmable output ``index``: True = high (``CameraGetOutPutIOStateEx``)."""
+        state = c_uint()
+        self._call("CameraGetOutPutIOStateEx", self._check_io(index, True), byref(state))
+        return bool(state.value)
+
+    def set_output(self, index: int, high: bool) -> None:
+        """Drive programmable output ``index`` high or low (``CameraSetIOStateEx``)."""
+        self._call("CameraSetIOStateEx", self._check_io(index, True), 1 if high else 0)
+
+    strobe_mode = _int_property(
+        "CameraGetStrobeMode", "CameraSetStrobeMode",
+        "``STROBE_SYNC_WITH_TRIG_AUTO``, ``STROBE_SYNC_WITH_TRIG_MANUAL``, ``STROBE_ALWAYS_HIGH`` or ``STROBE_ALWAYS_LOW``.")
+    strobe_polarity = _int_property(
+        "CameraGetStrobePolarity", "CameraSetStrobePolarity", "Active level of the strobe: 1 high (default), 0 low.", 0, 1)
+    strobe_delay_us = _uint_property(
+        "CameraGetStrobeDelayTime", "CameraSetStrobeDelayTime",
+        "Strobe delay after the trigger in microseconds (``STROBE_SYNC_WITH_TRIG_MANUAL``).")
+    strobe_pulse_width_us = _uint_property(
+        "CameraGetStrobePulseWidth", "CameraSetStrobePulseWidth",
+        "Strobe pulse width in microseconds (``STROBE_SYNC_WITH_TRIG_MANUAL``).")
 
     # -- GigE transport ---------------------------------------------------
 
@@ -675,6 +1172,13 @@ class Camera:
         best = max(fitting, key=lambda p: p.size)
         self.gige_packet_index = best.index
 
+    def set_frame_resend_count(self, count: int) -> None:
+        """Resends of a frame the PC did not acknowledge, in trigger mode (GigE only; <= 0 disables).
+
+        The SDK offers no getter for this value.
+        """
+        self._call("CameraSetFrameResendCount", int(count))
+
     # -- streaming --------------------------------------------------------
 
     def play(self) -> None:
@@ -697,11 +1201,30 @@ class Camera:
         self._call("CameraGetFrameStatistic", byref(stat))
         return FrameStatistic(stat.iTotal, stat.iCapture, stat.iLost)
 
-    def save_parameter(self, team: int = _ffi.PARAMETER_TEAM_A) -> None:
-        self._call("CameraSaveParameter", int(team))
+    def save_parameter(self, group: Union[int, str] = "A") -> None:
+        """Save the current settings to parameter group ``"A"`` to ``"D"`` (``CameraSaveParameter``)."""
+        self._call("CameraSaveParameter", _parameter_group(group, allow_default=False))
 
-    def load_parameter(self, team: int = _ffi.PARAMETER_TEAM_A) -> None:
-        self._call("CameraLoadParameter", int(team))
+    def load_parameter(self, group: Union[int, str] = "A") -> None:
+        """Load group ``"A"`` to ``"D"``, or ``"default"`` for factory defaults (``CameraLoadParameter``)."""
+        self._call("CameraLoadParameter", _parameter_group(group, allow_default=True))
+
+    @property
+    def parameter_group(self) -> int:
+        """Currently selected parameter group (0 to 3 for A to D, 255 for defaults)."""
+        return int(self._get("CameraGetCurrentParameterGroup", c_int))
+
+    def save_parameter_to_file(self, path: str) -> None:
+        """Write the current settings to a .config file (``CameraSaveParameterToFile``)."""
+        self._call("CameraSaveParameterToFile", encode_c_string(str(path)))
+
+    def load_parameter_from_file(self, path: str) -> None:
+        """Load settings from a .config file (``CameraReadParameterFromFile``)."""
+        self._call("CameraReadParameterFromFile", encode_c_string(str(path)))
+
+    parameter_mode = _int_property(
+        "CameraGetParameterMode", "CameraSetParameterMode",
+        "Where parameter groups are stored: ``PARAM_MODE_BY_MODEL``, ``_BY_NAME``, ``_BY_SN`` or ``_IN_DEVICE``.")
 
     def grab(self, timeout_ms: int = 1000) -> "Frame":
         """Wait for the next frame (``CameraGetImageBuffer``).
@@ -755,6 +1278,30 @@ class Camera:
         self._call("CameraSetCallbackFunction", _ffi.CAMERA_SNAP_PROC(), None, None)
         self._callback_fn = None
         self._callback = None
+
+    def set_connection_callback(self, fn: Optional[Callable[[bool, int], None]]) -> None:
+        """Call ``fn(connected, reason)`` when the camera drops out or comes back.
+
+        ``connected`` is False on disconnect and True when the connection is
+        restored. For GigE cameras, on reconnect ``reason`` is 0 when the last
+        drop was a network failure and 1 when the camera lost power; otherwise it
+        is undefined. Runs on an SDK thread; exceptions are printed, not raised.
+        ``None`` removes the callback.
+        """
+        if fn is None:
+            self._call("CameraSetConnectionStatusCallback", _ffi.CAMERA_CONNECTION_STATUS_CALLBACK(), None)
+            self._connection_callback = None
+            return
+
+        def trampoline(_handle: int, msg: int, param: int, _context: Any) -> None:
+            try:
+                fn(msg == 1, int(param))
+            except BaseException:  # noqa: BLE001 - nothing may escape into C
+                traceback.print_exc()
+
+        wrapper = _ffi.CAMERA_CONNECTION_STATUS_CALLBACK(trampoline)
+        self._call("CameraSetConnectionStatusCallback", wrapper, None)
+        self._connection_callback = wrapper
 
     def __repr__(self) -> str:
         state = "closed" if self._closed else "handle=%d" % self._handle

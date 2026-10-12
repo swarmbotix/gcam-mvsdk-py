@@ -195,6 +195,8 @@ Two ways to run this:
 Errors raise `gcam_mvsdk_py.MvError`, which carries the SDK status code and message; a timed-out
 `grab` raises `gcam_mvsdk_py.MvTimeout`.
 
+More settings on `cam`: `ae_target`, `ae_threshold`, `ae_exposure_range_us`, `ae_analog_gain_range`, `ae_window`, `digital_gain`, `anti_flicker`, `light_frequency_hz`, `trigger_count`, `trigger_delay_us`, `trigger_period_us`, `ext_trigger_*`, `soft_trigger()`, `set_roi()`, `set_resolution()`, `mirror_horizontal`/`_vertical`, `rotation_deg`, `gamma`, `contrast`, `saturation`, `sharpness`, `black_level`, `white_level`, `auto_white_balance`, `white_balance_once()`, `strobe_mode`, `get_input()`/`set_output()`, `set_frame_resend_count()`, `parameter_mode`, `save_parameter("A")`/`load_parameter("A")`, `set_connection_callback()`, and `cam.call()`/`cam.query()` for anything not wrapped; see [What the SDK can change](#what-the-sdk-can-change).
+
 ### Live view
 
 `examples/live_view.py` shows one camera in an OpenCV window with a frame-rate overlay. It needs
@@ -221,6 +223,15 @@ camera is connected. Options: `--exposure-us` (default 5000), `--mtu 9000` with 
 `--window` for the title. The window needs a display: run it in a desktop session or with `DISPLAY`
 set. Inside Docker, run `xhost +local:` on the host once and pass `DISPLAY` and `/tmp/.X11-unix`
 into the container.
+
+## What the SDK can change
+
+[docs/CAPABILITIES.md](docs/CAPABILITIES.md) lists every camera setting the vendor SDK exposes,
+grouped as identity and network, exposure and gain, frame rate and triggering, image geometry, image
+processing, digital I/O and strobe, GigE transport, parameter persistence, callbacks, and the vendor
+GUI functions. For each one it gives what it does, a typical use case, the vendor function, whether
+`gcam-mvsdk-py` wraps it, and a runnable Python example. Whether a particular camera supports a
+setting, and in what range, is shown by `gcam-mvsdk-py info <name or serial>` under "Capability".
 
 ## Privileges and network
 
