@@ -35,3 +35,7 @@ htmlcov/
 # Output of `gcam-mvsdk-py grab` when run from the checkout
 *.png
 !docs/**/*.png
+
+# Recordings from examples/live_view.py (data_dir in examples/record.yaml); only the placeholder is tracked
+/data/*
+!/data/.gitkeep
