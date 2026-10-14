@@ -1,8 +1,8 @@
 """``gcam-mvsdk-py doctor``: diagnose SDK presence and host configuration.
 
-Checks: SDK library and installed version, raw-socket privileges of the
-running interpreter, ``rp_filter``, firewall state, NIC addresses and MTU, and
-whether discovered GigE cameras share a subnet with the host NIC.
+Checks: SDK library and installed version, ``rp_filter``, firewall state, NIC
+addresses and MTU, and whether discovered GigE cameras share a subnet with the
+host NIC. GigE discovery itself needs no root or capability.
 """
 
 from __future__ import annotations
@@ -35,8 +35,6 @@ from ._loader import (
     sdk_home,
 )
 
-CAP_NET_ADMIN = 12
-CAP_NET_RAW = 13
 GVCP_PORT = 3956
 
 OK, WARN, FAIL, INFO = "OK", "WARN", "FAIL", "INFO"
@@ -70,68 +68,6 @@ class Report:
 
     def section(self, title: str) -> None:
         print("\n== %s" % title)
-
-
-# ---------------------------------------------------------------------------
-# Privileges
-# ---------------------------------------------------------------------------
-
-
-def effective_capabilities(status_text: Optional[str] = None) -> Optional[int]:
-    """Effective capability mask of this process (Linux), or ``None`` if unknown."""
-    if status_text is None:
-        try:
-            status_text = Path("/proc/self/status").read_text()
-        except OSError:
-            return None
-    for line in status_text.splitlines():
-        if line.startswith("CapEff:"):
-            return int(line.split()[1], 16)
-    return None
-
-
-def has_capability(bit: int, status_text: Optional[str] = None) -> bool:
-    caps = effective_capabilities(status_text)
-    return caps is not None and bool(caps & (1 << bit))
-
-
-def is_root() -> bool:
-    geteuid = getattr(os, "geteuid", None)
-    return geteuid is not None and geteuid() == 0
-
-
-def has_raw_socket_privilege() -> bool:
-    """True if this process can open raw sockets (root or CAP_NET_RAW)."""
-    if sys.platform == "win32":
-        return True
-    return is_root() or has_capability(CAP_NET_RAW)
-
-
-def interpreter_setcap_advice() -> Tuple[str, str]:
-    """Return ``(status, text)`` describing how to grant CAP_NET_RAW to this interpreter."""
-    exe = sys.executable
-    real = os.path.realpath(exe)
-    in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
-    cmd = "sudo setcap cap_net_raw,cap_net_admin+ep %s" % real
-    if not in_venv:
-        return (
-            WARN,
-            "This interpreter (%s) is not a virtual environment. Do not grant capabilities to a\n"
-            "system interpreter. Run `bash install.bash` from the gcam-mvsdk-py checkout: it creates\n"
-            "~/.gcam-mvsdk/py-venv with a private copy of Python and offers the setcap step. By hand:\n"
-            "  python3 -m venv --copies ~/.gcam-mvsdk/py-venv && ~/.gcam-mvsdk/py-venv/bin/pip install gcam-mvsdk-py\n"
-            "  sudo setcap cap_net_raw,cap_net_admin+ep ~/.gcam-mvsdk/py-venv/bin/python3" % real,
-        )
-    prefix = os.path.realpath(sys.prefix)
-    if not (real == prefix or real.startswith(prefix + os.sep)):
-        return (
-            WARN,
-            "The venv interpreter %s is a symlink to %s, which other programs share;\n"
-            "setcap would apply to that file. Recreate the venv with --copies:\n"
-            "  python3 -m venv --copies %s\n"
-            "then run: sudo setcap cap_net_raw,cap_net_admin+ep %s/bin/python3" % (exe, real, sys.prefix, sys.prefix),
-        )
-    return (INFO, "Grant raw-socket access to this venv's interpreter once:\n  %s" % cmd)
 
 
 # ---------------------------------------------------------------------------
@@ -314,30 +250,9 @@ def run(sdk_path: Optional[str] = None) -> int:
         except Exception as exc:  # noqa: BLE001 - report every failure mode
             report.add(FAIL, "Loading the SDK failed: %s" % exc)
 
-    # -- privileges ---------------------------------------------------------
-    report.section("Privileges")
     if sys.platform == "win32":  # pragma: no cover - Windows only
-        try:
-            import ctypes
-
-            admin = bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
-        except Exception:
-            admin = False
-        report.add(INFO, "Administrator: %s. GigE cameras need the vendor installer's filter driver;\n"
-                         "the DLL alone is not sufficient." % ("yes" if admin else "no"))
-    elif sys.platform.startswith("linux"):
-        if is_root():
-            report.add(OK, "Running as root")
-        elif has_capability(CAP_NET_RAW):
-            report.add(OK, "CAP_NET_RAW is effective for this interpreter")
-        else:
-            report.add(WARN, "Not root and CAP_NET_RAW is not effective; GigE discovery may find no cameras.")
-            status, text = interpreter_setcap_advice()
-            report.add(status, text)
-            report.add(INFO, "Alternatives: `sudo -E %s -m gcam_mvsdk_py list` (keeps GCAM_MVSDK_DIR and HOME),\n"
-                             "or in Docker: network_mode: host and privileged: true." % sys.executable)
-    else:
-        report.add(INFO, "Privilege checks are implemented for Linux and Windows only")
+        report.add(INFO, "GigE cameras on Windows need the vendor installer's filter driver;\n"
+                         "the DLL alone is not sufficient.")
 
     # -- network --------------------------------------------------------------
     interfaces = list_interfaces()
@@ -378,11 +293,9 @@ def run(sdk_path: Optional[str] = None) -> int:
             devices = []
             report.add(FAIL, "Enumeration failed: %s" % exc)
         if not devices:
-            hint = ""
-            if sys.platform.startswith("linux") and not has_raw_socket_privilege():
-                hint = "\nLikely cause: missing CAP_NET_RAW (see Privileges above)."
             report.add(WARN, "No cameras discovered. Check power, cable, a static host IP in the camera subnet,\n"
-                             "rp_filter, and the firewall." + hint)
+                             "rp_filter, the firewall, and that no other program holds the camera.\n"
+                             "Discovery needs no root or capability.")
         for dev in devices:
             label = "%s %s (%s)" % (dev.model, dev.serial, dev.port_type)
             if not dev.is_gige:

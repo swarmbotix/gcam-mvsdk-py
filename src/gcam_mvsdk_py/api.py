@@ -380,7 +380,7 @@ class Sdk:
         """
         devices = self.enumerate() if devices is None else devices
         if not devices:
-            raise DeviceNotFound("no cameras found; check cable, power, subnet, and privileges (gcam-mvsdk-py doctor)")
+            raise DeviceNotFound("no cameras found; check cable, power, subnet, rp_filter, and firewall (gcam-mvsdk-py doctor)")
         by_serial = [d for d in devices if d.serial == key]
         if len(by_serial) == 1:
             return by_serial[0]

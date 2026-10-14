@@ -9,6 +9,38 @@ That library is not in this repository or in the Python package, because HuaTeng
 redistribution. The installer downloads it from HuaTeng's website, checks its SHA-256 against a value
 recorded here, and stores it in your home directory. The package itself is pure Python.
 
+## Run
+
+Live view with recording, from the repository directory (needs the `view` extra, see
+[Live view](#live-view); no root or capability is needed):
+
+```bash
+~/.gcam-mvsdk/py-venv/bin/python3 examples/live_view.py sb00              # installer environment (install.bash --with-view)
+python3 examples/live_view.py sb00                                       # your own environment with gcam-mvsdk-py[view]
+python3 examples/live_view.py sb00 --mtu 1500                            # if frames time out
+python3 examples/live_view.py sb00 --exposure-us 2000 --config examples/record.yaml
+# keys: r start recording, c stop recording, q or Esc quit
+# images: ~/.gcam-mvsdk/data/<YYYYMMDD_HHMMSS>_sb00/0.png, 1.png, ...  (5 per second for 30 s, see examples/record.yaml)
+```
+
+The camera argument is the user-set name or serial; omit it when a single camera is connected.
+
+The command-line tool, after `bash install.bash`:
+
+```bash
+gcam-mvsdk-py list                                        # every camera; --json for scripts
+gcam-mvsdk-py info sb00                                   # settings of one camera; --json
+gcam-mvsdk-py grab sb00 -n 3 -o frames/                   # save PNG frames
+gcam-mvsdk-py set sb00 --frame-rate 30 --exposure-us 5000 # change settings; add --save B to persist
+gcam-mvsdk-py rename <SN> sb00                            # give a camera a name
+gcam-mvsdk-py setip <MAC> 192.168.1.50 255.255.255.0 0.0.0.0
+gcam-mvsdk-py doctor                                      # SDK, rp_filter, firewall, subnets
+```
+
+Tests for the viewer, without a camera or display: `pytest tests/test_live_view_example.py`. Stop
+any program that streams from the camera before starting the viewer; a camera is held by one
+process at a time.
+
 ## Quick start
 
 ```bash
@@ -42,8 +74,8 @@ below is also printed by the script while it runs, and `bash install.bash --help
    system Python is never modified.
 3. **Creates a private Python environment** at `~/.gcam-mvsdk/py-venv/`, with
    `python3 -m venv --copies`. "Copies" means the interpreter inside it is a real file, not a link
-   to `/usr/bin/python3`; this matters for step 6. Nothing is installed into the system Python or
-   into any environment you already have.
+   to `/usr/bin/python3`. Nothing is installed into the system Python or into any environment you
+   already have.
 4. **Installs the package into that environment** with `pip`, together with NumPy. Dependencies
    come from PyPI. With `--with-opencv`, headless OpenCV is added as well; with `--with-view`,
    OpenCV with GUI support for the [live-view example](#live-view) (use one or the other).
@@ -55,16 +87,11 @@ below is also printed by the script while it runs, and `bash install.bash --help
    (58 MB, plain HTTP), compares the SHA-256 with the value in `sdk-manifest.toml`, and refuses the
    file if it differs. Extracts it to `~/.gcam-mvsdk/2.1.0.49/`. With `--from FILE` it uses an
    archive you downloaded yourself instead, verified the same way.
-7. **Privileges for camera discovery (asks first).** GigE cameras answer a broadcast that Linux only
-   allows from a process with the `CAP_NET_RAW` capability. The script shows the command
-   `sudo setcap cap_net_raw,cap_net_admin+ep ~/.gcam-mvsdk/py-venv/bin/python3` and asks before
-   running it. This is why step 3 used `--copies`: the capability lands on the private interpreter
-   file only, never on `/usr/bin/python3`. Saying no is fine; see [Privileges](#privileges-and-network)
-   for what that means and for the alternative.
-8. **USB udev rules (only with `--udev`).** Copies the vendor's two rule files to
+7. **USB udev rules (asks first).** Copies the vendor's two rule files to
    `/etc/udev/rules.d/` (converted to Unix line endings) and reloads udev. Skip this unless you have
-   USB cameras.
-9. **Verifies.** Runs `gcam-mvsdk-py doctor` and `gcam-mvsdk-py list`, then prints where everything
+   USB cameras. GigE cameras need no system change: discovery and streaming work from an ordinary
+   user process, without root or a capability.
+8. **Verifies.** Runs `gcam-mvsdk-py doctor` and `gcam-mvsdk-py list`, then prints where everything
    went.
 
 All `sudo` commands are collected and shown together before the first prompt. `--no-sudo` prints
@@ -90,15 +117,15 @@ Only these, each one only with your explicit `sudo` confirmation:
 
 | Change | Why | Undo |
 |---|---|---|
-| `setcap cap_net_raw,cap_net_admin+ep` on `~/.gcam-mvsdk/py-venv/bin/python3` | GigE discovery broadcast | `sudo setcap -r ~/.gcam-mvsdk/py-venv/bin/python3`, or delete the environment |
 | `apt-get install python3-venv python3-pip` (Debian/Ubuntu, only if `venv` is missing) | Needed to create the private environment | `sudo apt-get remove python3-venv` (harmless to keep) |
-| `apt-get install libcap2-bin` (only if `setcap` itself is missing) | Provides the `setcap` command | `sudo apt-get remove libcap2-bin` |
-| Copy `88-mvusb.rules`, `99-mvusb.rules` to `/etc/udev/rules.d/` (only with `--udev`) | USB camera access without root | `sudo rm /etc/udev/rules.d/88-mvusb.rules /etc/udev/rules.d/99-mvusb.rules` |
+| Copy `88-mvusb.rules`, `99-mvusb.rules` to `/etc/udev/rules.d/` | USB camera access without root | `sudo rm /etc/udev/rules.d/88-mvusb.rules /etc/udev/rules.d/99-mvusb.rules` |
 
 ### What it never does
 
 - Does not install anything into the system Python or `pip install` outside the private environment.
 - Does not write to `/usr`, `/lib`, `/opt`, or `/etc` (except the udev rules above, on request).
+- Does not grant file capabilities to any program and never asks for root on behalf of GigE
+  discovery; it works from an ordinary user process.
 - Does not run `ldconfig`, install a kernel module, start a service, or add a cron job.
 - Does not change `sysctl` settings or the firewall. `doctor` prints those commands; you run them.
 - Does not modify `~/.bashrc`, `~/.profile`, or any shell configuration. If `~/.local/bin` is
@@ -131,8 +158,7 @@ install. `gcam-mvsdk-py doctor` shows which one is in use.
 
 **Finding cameras.** `list` sends a GigE Vision discovery broadcast on every network card and
 waits for replies. This reaches only cameras on the same network segment as a card in your
-machine, and only when the process may open raw sockets (step 7 above, or `sudo -E`). USB cameras
-are found through the udev rules.
+machine. No root or capability is needed for this. USB cameras are found through the udev rules.
 
 ## Commands
 
@@ -144,7 +170,7 @@ are found through the udev rules.
 | `gcam-mvsdk-py info <NAME or SN> [--json]` | Exposure, gain, resolution, frame rate, trigger, packet sizes. |
 | `gcam-mvsdk-py set <NAME or SN> [--frame-rate HZ] [--exposure-us US] [--auto-exposure on\|off] [--save A\|B\|C\|D]` | Change the frame-rate cap (0 = uncapped), exposure, or auto exposure and print each value read back; without options, print the current ones. Kept in RAM until `--save` stores them in a parameter group. |
 | `gcam-mvsdk-py grab <NAME or SN> [-n N] [-o DIR]` | Save N frames as PNG files (default 1, into the current directory). |
-| `gcam-mvsdk-py doctor` | Check the SDK, permissions, `rp_filter`, firewall, and subnets, and print the fix for each. |
+| `gcam-mvsdk-py doctor` | Check the SDK, `rp_filter`, firewall, and subnets, and print the fix for each. |
 | `gcam-mvsdk-py setup [--from FILE]` | Download or reinstall the SDK (the installer already ran it). |
 
 `gcam-mvsdk-py <command> --help` lists every option. Exit codes: 0 success, 1 error, 2 invalid
@@ -206,7 +232,7 @@ print(img.shape, img.dtype, img.mean())
 Two ways to run this:
 
 - With the installed environment: `~/.gcam-mvsdk/py-venv/bin/python3 my_script.py`. That
-  interpreter already has the package, NumPy, and (if granted) the raw-socket capability.
+  interpreter already has the package and NumPy.
 - In your own environment, install the package with one of these:
 
   ```bash
@@ -224,8 +250,8 @@ Two ways to run this:
   gcam-mvsdk-py @ git+https://github.com/swarmbotix/gcam-mvsdk-py@v0.1.0
   ```
 
-  Your interpreter then needs the SDK (`gcam-mvsdk-py setup` or `GCAM_MVSDK_DIR`) and, for GigE
-  discovery, `CAP_NET_RAW` or `sudo -E`, exactly like the command.
+  Your interpreter then needs the SDK (`gcam-mvsdk-py setup` or `GCAM_MVSDK_DIR`), exactly like the
+  command. GigE discovery needs no root or capability.
 
 Errors raise `gcam_mvsdk_py.MvError`, which carries the SDK status code and message; a timed-out
 `grab` raises `gcam_mvsdk_py.MvTimeout`.
@@ -234,9 +260,10 @@ More settings on `cam`: `ae_target`, `ae_threshold`, `ae_exposure_range_us`, `ae
 
 ### Live view
 
-`examples/live_view.py` shows one camera in an OpenCV window with a frame-rate overlay. It needs
-OpenCV with GUI support, which the `view` extra provides. Do not install it next to the headless
-`opencv` extra in the same environment; both provide the `cv2` module.
+`examples/live_view.py` shows one camera in an OpenCV window with a frame-rate overlay and records
+PNG images on request. It needs OpenCV with GUI support and PyYAML, which the `view` extra provides.
+Do not install it next to the headless `opencv` extra in the same environment; both provide the
+`cv2` module.
 
 ```bash
 pip install -r examples/requirements.txt                              # from a clone, in the repository root
@@ -253,9 +280,20 @@ From the repository directory:
 python3 examples/live_view.py <serial>                            # your own environment
 ```
 
-Press `q` or Esc, or close the window, to quit. The camera argument can be left out when exactly one
-camera is connected. Options: `--exposure-us` (default 5000), `--mtu 9000` with jumbo frames,
-`--window` for the title. The window needs a display: run it in a desktop session or with `DISPLAY`
+Keys: `r` starts a recording, `c` stops it early, `q` or Esc quits; closing the window also quits.
+The camera argument can be left out when exactly one camera is connected. Options: `--exposure-us`
+(default 5000), `--mtu 9000` with jumbo frames, `--window` for the title, `--config FILE` for the
+recording options (default `examples/record.yaml`).
+
+A recording saves `rate_hz` images per second (default 5) for `duration_s` seconds (default 30), or
+until `c` is pressed; the camera keeps streaming at its own rate in between. The images are plain
+Mono8 PNG files, without the overlay, in a new folder per recording:
+`<data_dir>/<YYYYMMDD_HHMMSS>_<camera>/0.png, 1.png, ...`, where `<camera>` is the user-set name
+(else the serial) and `data_dir` defaults to `<sdk home>/data` (`~/.gcam-mvsdk/data`). The three
+options are set in `examples/record.yaml`; the terminal prints the folder and the image count when a
+recording stops.
+
+The window needs a display: run it in a desktop session or with `DISPLAY`
 set. Inside Docker, run `xhost +local:` on the host once and pass `DISPLAY` and `/tmp/.X11-unix`
 into the container.
 
@@ -270,31 +308,29 @@ setting, and in what range, is shown by `gcam-mvsdk-py info <name or serial>` un
 To try the examples on a camera, run `python examples/capabilities.py <name or serial>` from the
 repository; it changes no settings unless `--write` is given, and `--list` shows the functions by section.
 
-## Privileges and network
+## Network settings
 
-GigE discovery needs four things, and streaming at the camera's full frame rate needs a fifth.
-`gcam-mvsdk-py doctor` checks the first four and prints the command for your machine; the fifth is
+GigE discovery and streaming run as an ordinary user: no root, no `sudo`, no file capability.
+Discovery needs three host settings, and streaming at the camera's full frame rate needs a fourth.
+`gcam-mvsdk-py doctor` checks the first three and prints the command for your machine; the fourth is
 not checked by `doctor` and is explained under [Known issues](#known-issues).
 
 ```bash
-# 1. Raw-socket capability for the private Python (install.bash offers this)
-sudo setcap cap_net_raw,cap_net_admin+ep ~/.gcam-mvsdk/py-venv/bin/python3
-
-# 2. Reverse-path filtering off, now and after reboot (replace enp4s0 with your camera NIC)
+# 1. Reverse-path filtering off, now and after reboot (replace enp4s0 with your camera NIC)
 sudo sysctl -w net.ipv4.conf.all.rp_filter=0 net.ipv4.conf.enp4s0.rp_filter=0
 printf 'net.ipv4.conf.all.rp_filter=0\nnet.ipv4.conf.default.rp_filter=0\nnet.ipv4.conf.enp4s0.rp_filter=0\n' \
   | sudo tee /etc/sysctl.d/60-gige-camera.conf
 
-# 3. Firewall: trust the camera NIC
+# 2. Firewall: trust the camera NIC
 sudo ufw allow in on enp4s0                                   # ufw
 sudo firewall-cmd --zone=trusted --change-interface=enp4s0 --permanent && sudo firewall-cmd --reload   # firewalld
 
-# 4. Host NIC and cameras in the same subnet (example: 192.168.3.0/24)
+# 3. Host NIC and cameras in the same subnet (example: 192.168.3.0/24)
 sudo nmcli con mod "<connection name>" ipv4.method manual ipv4.addresses 192.168.3.10/24
 sudo nmcli con up "<connection name>"
 gcam-mvsdk-py setip <camera MAC> 192.168.3.252 255.255.255.0 0.0.0.0
 
-# 5. Larger socket receive buffers, now and after reboot (needed for full frame rate; see Known issues)
+# 4. Larger socket receive buffers, now and after reboot (needed for full frame rate; see Known issues)
 sudo sysctl -w net.core.rmem_max=33554432 net.core.rmem_default=33554432
 printf 'net.core.rmem_max=33554432\nnet.core.rmem_default=33554432\n' \
   | sudo tee -a /etc/sysctl.d/60-gige-camera.conf
@@ -303,33 +339,22 @@ printf 'net.core.rmem_max=33554432\nnet.core.rmem_default=33554432\n' \
 gcam-mvsdk-py setup --udev
 ```
 
-**What step 1 means, and its one drawback.** `setcap` marks one file so that it may open raw
-network sockets without being root. Here that file is the Python interpreter inside the private
-environment. Because an interpreter runs whatever script it is given, any script started with
-`~/.gcam-mvsdk/py-venv/bin/python3` gets the same capability, not only this tool. The exposure is
-limited: the capability applies to that one file (never to `/usr/bin/python3`), the environment
-contains only this package and NumPy, and `CAP_NET_RAW` allows sniffing and crafting packets on
-your own network cards, not root access. If you are not comfortable with that, say no at step 7 and
-use `sudo -E ~/.local/bin/gcam-mvsdk-py list` instead; `-E` keeps `GCAM_MVSDK_HOME` and `HOME` so
-the SDK is still found. The Rust tool `gcam-mvsdk-rs` is a single binary, so its capability covers
-only that program; prefer it where this matters. Inside Docker, use `network_mode: host` and
-`privileged: true`.
-
-The capability is lost whenever the interpreter file is replaced. After upgrading the system Python,
-run `bash install.bash` again so the private copy and its capability are refreshed.
+Inside Docker, use `network_mode: host` so the discovery broadcast reaches the camera NIC.
+After upgrading the system Python, run `bash install.bash` again so the private interpreter copy
+matches the installed standard library.
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `gcam-mvsdk-py: command not found` | `~/.local/bin` is not on `PATH` in this terminal | Open a new terminal; or `export PATH="$HOME/.local/bin:$PATH"` and add it to `~/.bashrc`. Being in the repository directory does not help. |
-| `list` says "No cameras found" | Missing raw-socket permission, `rp_filter` not 0 (Ubuntu 24.04 default is 2), firewall, camera on another subnet or another NIC, no power or link | Run `gcam-mvsdk-py doctor` and apply the fixes it prints (see [Privileges](#privileges-and-network) and [Known issue 1](#1-list-finds-no-cameras-and-the-camera-is-absent-from-arp--a)) |
+| `list` says "No cameras found" | `rp_filter` not 0 (Ubuntu 24.04 default is 2), firewall, camera on another subnet or another NIC, no power or link | Run `gcam-mvsdk-py doctor` and apply the fixes it prints (see [Network settings](#network-settings) and [Known issue 1](#1-list-finds-no-cameras-and-the-camera-is-absent-from-arp--a)) |
 | `SdkNotFound` / "HuaTeng MVSDK library not found" | SDK not installed, deleted, or for another CPU architecture | `gcam-mvsdk-py setup`, or `export GCAM_MVSDK_DIR=<extracted SDK>`; on soft-float ARM `export GCAM_MVSDK_ARCH=arm_softfp` |
 | `status 32774` (0x8006) or `status -45` when opening | The camera is held by another process or host (a publisher, an old container, a viewer) | Stop the holder: `docker ps`, then `docker stop <id>`; close other viewers; retry |
 | `status -13` (I/O error) when opening | Same as above, or the camera is not reachable on the current subnet | Stop other holders; `gcam-mvsdk-py doctor`; move the camera with `setip` |
-| `Permission denied` or `Operation not permitted` | GigE: the Python lacks the raw-socket permission. USB: udev rules missing | GigE: the `setcap` command above, or `sudo -E`. USB: `gcam-mvsdk-py setup --udev`, then replug |
+| `Permission denied` or `Operation not permitted` on a USB camera | udev rules missing | `gcam-mvsdk-py setup --udev`, then replug |
 | `grab` times out (`status -12`) | Packets larger than the NIC MTU, `rp_filter`, firewall | Apply the network fixes; for jumbo frames set the NIC MTU to 9000 |
-| Frame rate stuck near 60 fps, no frames lost | `net.core.rmem_max` at the Ubuntu default (about 200 KB); the camera throttles itself after resend requests | Step 5 in [Privileges](#privileges-and-network); details under [Known issue 2](#2-frame-rate-capped-near-60-fps-although-no-frames-are-lost) |
+| Frame rate stuck near 60 fps, no frames lost | `net.core.rmem_max` at the Ubuntu default (about 200 KB); the camera throttles itself after resend requests | Step 4 in [Network settings](#network-settings); details under [Known issue 2](#2-frame-rate-capped-near-60-fps-although-no-frames-are-lost) |
 | Download fails, or the size or checksum does not match | The vendor moved or replaced the file | Download from http://huatengvision.com/download/1/ and use `--from`. A checksum mismatch is never overridden. |
 
 ## Known issues
@@ -352,11 +377,11 @@ drops such packets inside the kernel, before any user-space program sees them. T
 camera is missing from `arp -a` as well. When `ufw` is enabled it additionally blocks the inbound
 GigE Vision control port (UDP 3956), which stops discovery even with `rp_filter` at 0.
 
-**Fix.** Steps 2 and 3 in [Privileges and network](#privileges-and-network): set `rp_filter` to 0
+**Fix.** Steps 1 and 2 in [Network settings](#network-settings): set `rp_filter` to 0
 for all interfaces and for the camera NIC, write the setting to `/etc/sysctl.d/60-gige-camera.conf` so it
 survives a reboot, and allow inbound traffic from the camera in the firewall (or disable `ufw` on an
 isolated lab host). If the camera still has an address outside the host subnet afterwards, move it
-with `setip` (step 4).
+with `setip` (step 3).
 
 **Verify.**
 
@@ -384,7 +409,7 @@ packets are dropped, the GigE Vision stream issues resend requests, and the came
 by stepping down to a "safe" rate of roughly 78 MB/s. The camera is choosing to send more slowly,
 which is why no frames are reported lost.
 
-**Fix.** Step 5 in [Privileges and network](#privileges-and-network): raise `net.core.rmem_max`
+**Fix.** Step 4 in [Network settings](#network-settings): raise `net.core.rmem_max`
 and `net.core.rmem_default` to 32 MB (33554432 bytes) and append them to
 `/etc/sysctl.d/60-gige-camera.conf`. The SDK sizes its sockets when a camera is opened, so restart any program
 that was already streaming. Inside Docker with `network_mode: host` the new values apply at once,
@@ -425,7 +450,7 @@ the `--from` command.
 bash install.bash --uninstall
 ```
 
-Removes the private environment (and with it the capability) and the command link, then asks before
+Removes the private environment and the command link, then asks before
 deleting the downloaded SDK (kept by default, because `gcam-mvsdk-rs` uses the same files). To
 remove the rest by hand:
 

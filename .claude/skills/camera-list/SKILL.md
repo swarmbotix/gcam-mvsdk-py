@@ -22,8 +22,7 @@ Use camera-discovery instead when `list` prints "No cameras found" or an expecte
 
 - The command is installed (`bash install.bash`) and the SDK loads: `gcam-mvsdk-py doctor` shows
   no FAIL in its SDK section. Otherwise use the sdk-setup skill.
-- GigE discovery needs raw-socket permission: the capability that install.bash offers on
-  `~/.gcam-mvsdk/py-venv/bin/python3`, or `sudo -E ~/.local/bin/gcam-mvsdk-py list`.
+- Run it as your own user; GigE discovery needs no root or capability.
 
 ## Steps
 

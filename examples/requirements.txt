@@ -1,6 +1,7 @@
 # Live-view example: pip install -r examples/requirements.txt  (run from the repository root;
 # add -U to upgrade an existing environment). Everything comes as wheels from PyPI.
-# This checkout with the "view" extra: gcam-mvsdk-py, numpy, and opencv-python (GUI build).
+# This checkout with the "view" extra: gcam-mvsdk-py, numpy, opencv-python (GUI build) and PyYAML.
 .[view]
-# OpenCV listed explicitly; the floor is deliberately low (no upper bound) so pip always picks the newest wheel.
+# OpenCV and PyYAML listed explicitly; the floors are deliberately low (no upper bound) so pip always picks the newest wheels.
 opencv-python>=4.5
+pyyaml>=5.1

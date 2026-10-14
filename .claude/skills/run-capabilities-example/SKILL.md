@@ -22,9 +22,8 @@ For changing and keeping one setting, use camera-configure; for the model's rang
 ## Prerequisites
 
 - A repository clone (the examples are not in the installed package); run from its root.
-- An interpreter with the package and NumPy that can discover cameras:
-  `~/.gcam-mvsdk/py-venv/bin/python3`, or your own environment (with `sudo -E` or the capability,
-  as in run-live-view).
+- An interpreter with the package and NumPy: `~/.gcam-mvsdk/py-venv/bin/python3`, or your own
+  environment with the package installed (as in run-live-view). No root or capability is needed.
 - The camera is listed (`gcam-mvsdk-py list`) and not held by another program.
 
 ## Steps

@@ -36,12 +36,14 @@ dependencies = [
 [project.optional-dependencies]
 # Headless OpenCV, used by `grab` for PNG writing when present.
 opencv = ["opencv-python-headless>=4.5"]
-# OpenCV with GUI support (cv2.imshow) for examples/live_view.py. Do not install
-# together with the `opencv` extra: both wheels provide the cv2 module.
-view = ["opencv-python>=4.5"]
+# OpenCV with GUI support (cv2.imshow) and PyYAML (examples/record.yaml) for
+# examples/live_view.py. Do not install together with the `opencv` extra: both
+# wheels provide the cv2 module.
+view = ["opencv-python>=4.5", "pyyaml>=5.1"]
 dev = [
     "pytest>=7",
     "build>=1.0",
+    "pyyaml>=5.1",
 ]
 
 [project.scripts]

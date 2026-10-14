@@ -3,8 +3,8 @@
 #
 # Creates a dedicated virtual environment, installs gcam-mvsdk-py into it,
 # links the `gcam-mvsdk-py` command into ~/.local/bin, downloads and verifies
-# the HuaTeng MVSDK, optionally grants raw-socket access and installs the USB
-# udev rules, and finishes with `gcam-mvsdk-py doctor` and `gcam-mvsdk-py list`.
+# the HuaTeng MVSDK, optionally installs the USB udev rules, and finishes with
+# `gcam-mvsdk-py doctor` and `gcam-mvsdk-py list`.
 # Safe to run again: every step detects work that is already done.
 #
 # Usage: bash install.bash [options]      (bash install.bash --help)
@@ -56,7 +56,6 @@ PKG_VERSION=""
 SDK_ROOT=""
 SDK_VERSION=""
 RUN_DIR=""
-CAP_STATE="not requested"
 UDEV_STATE="not requested"
 PATH_HINT=0
 SUDO=()
@@ -289,7 +288,7 @@ make_venv() {
         fi
         mkdir -p -- "$GCAM_MVSDK_HOME"
         "$PYTHON" -m venv --copies "$VENV_DIR"
-        info "created with --copies, so bin/python3 is a private file that setcap may modify"
+        info "created with --copies, so bin/python3 is a private file rather than a link to the system interpreter"
     fi
     printf '%s\n' "$GCAM_MVSDK_HOME" >"$HOME_MARKER"
     say "Upgrading pip inside the virtual environment"
@@ -414,53 +413,9 @@ install_sdk() {
     fi
 }
 
-# Path of the interpreter that the console script runs (the file setcap must target).
-script_interpreter() {
-    local first second
-    first="$(head -n 1 "$VENV_CLI")"
-    if [ "$first" = "#!/bin/sh" ]; then
-        # pip writes a /bin/sh trampoline when the interpreter path is long:
-        # line 2 is  '''exec' /path/python3 "$0" "$@"  (path quoted if it has spaces)
-        second="$(sed -n 2p "$VENV_CLI")"
-        second="${second#"'''exec' "}"
-        if [[ "$second" == \"* ]]; then
-            second="${second#\"}"
-            second="${second%%\"*}"
-        else
-            second="${second%% *}"
-        fi
-        printf '%s\n' "$second"
-    else
-        first="${first#\#!}"
-        printf '%s\n' "${first%% *}"
-    fi
-}
-
-has_net_raw() {
-    "$1" -c "
-import sys
-from $MODULE._doctor import CAP_NET_RAW, has_capability, is_root
-sys.exit(0 if (is_root() or has_capability(CAP_NET_RAW)) else 1)
-" >/dev/null 2>&1
-}
-
-configure_privileges() {
-    local interp setcap_cmd=() udev_cmds=() staged_dir="$GCAM_MVSDK_HOME/udev-rules" rule name all_present
-    interp="$(script_interpreter)"
-    [ -n "$interp" ] || interp="$VENV_PY"
-
-    say "Checking raw-socket access (CAP_NET_RAW) for GigE discovery"
-    if has_net_raw "$interp"; then
-        CAP_STATE="granted"
-        info "already granted to $interp"
-    elif [ -L "$interp" ] || [ ! -f "$interp" ]; then
-        CAP_STATE="not granted ($interp is not a private copy)"
-        warn "$interp is a symlink or missing; not applying setcap to a shared interpreter"
-    else
-        CAP_STATE="not granted"
-        setcap_cmd=(setcap "cap_net_raw,cap_net_admin+ep" "$interp")
-        info "not granted yet to $interp"
-    fi
+# GigE discovery needs no root or capability; only USB cameras need a system change (udev rules).
+configure_udev() {
+    local udev_cmds=() staged_dir="$GCAM_MVSDK_HOME/udev-rules" rule name all_present
 
     say "Checking the USB udev rules"
     local staged=()
@@ -495,12 +450,6 @@ configure_privileges() {
     fi
 
     local cmds=()
-    if [ ${#setcap_cmd[@]} -gt 0 ]; then
-        if ! command -v setcap >/dev/null 2>&1 && [ ! -x /usr/sbin/setcap ] && [ ! -x /sbin/setcap ] && [ "$IS_DEBIAN" -eq 1 ]; then
-            cmds+=("$(quote_cmd apt-get install -y libcap2-bin)")
-        fi
-        cmds+=("$(quote_cmd "${setcap_cmd[@]}")")
-    fi
     if [ ${#udev_cmds[@]} -gt 0 ]; then
         cmds+=("${udev_cmds[@]}")
     fi
@@ -508,7 +457,7 @@ configure_privileges() {
         return 0
     fi
 
-    say "Privileged setup: GigE raw sockets and USB udev rules"
+    say "Privileged setup: USB udev rules"
     local prefix="" c
     if [ ${#SUDO[@]} -gt 0 ]; then
         prefix="sudo "
@@ -518,26 +467,17 @@ configure_privileges() {
         info "  $prefix$c"
     done
     if [ "$NO_SUDO" -eq 1 ]; then
-        info "--no-sudo given: not running them. Run them yourself later for GigE discovery and USB access."
+        info "--no-sudo given: not running them. Run them yourself later for USB camera access."
         return 0
     fi
     if ! confirm "Run them now (one sudo prompt)?" Y; then
-        info "Skipped. Run them later; until then use: sudo -E $LINK list"
+        info "Skipped. Run them later for USB camera access; GigE cameras need no system change."
         return 0
     fi
     local joined
     joined="$(printf '%s && ' "${cmds[@]}")"
     joined="${joined% && }"
     if ${SUDO[@]+"${SUDO[@]}"} bash -c "$joined"; then
-        if [ ${#setcap_cmd[@]} -gt 0 ]; then
-            if "$interp" -c "import numpy, $MODULE" >/dev/null 2>&1 && has_net_raw "$interp"; then
-                CAP_STATE="granted"
-                info "CAP_NET_RAW is now effective for $interp"
-            else
-                CAP_STATE="setcap applied but not effective"
-                warn "the interpreter does not work as expected with capabilities; undo with: sudo setcap -r $interp"
-            fi
-        fi
         if [ ${#udev_cmds[@]} -gt 0 ]; then
             UDEV_STATE="installed"
         fi
@@ -561,7 +501,7 @@ final_checks() {
     else
         info "SDK           not found by the loader"
     fi
-    info "GigE access   CAP_NET_RAW $CAP_STATE"
+    info "GigE access   no system change needed"
     info "USB access    udev rules $UDEV_STATE"
     if [ "$DEV" -eq 1 ]; then
         info "Dev mode      run commands from $SCRIPT_DIR so ./vendor is found, or export GCAM_MVSDK_DIR=$SDK_ROOT"
@@ -657,7 +597,7 @@ main() {
         RUN_DIR="$GCAM_MVSDK_HOME"
     fi
     install_sdk
-    configure_privileges
+    configure_udev
     if ! final_checks; then
         exit 1
     fi

@@ -6,16 +6,15 @@ description: Run the gcam-mvsdk-py hardware tests (GCAM_MVSDK_HW_TEST=1 pytest t
 # Hardware tests
 
 The tests in `tests/hw/` are skipped unless `GCAM_MVSDK_HW_TEST=1`. They need the SDK, the
-cameras on a NIC of this host, raw-socket permission, and no other process holding the
-cameras.
+cameras on a NIC of this host, and no other process holding the cameras. They run as your own
+user; no root or capability is needed.
 
 ## Step 1: preconditions
 
 1. Stop anything that holds cameras: the publishers (`docker ps`, then `docker compose down`
    in `camera_publishers/cam_gige_ht`), viewers, other test runs. A held camera makes the
    grab test skip or fail with status 32774 (0x8006), -45, or -13.
-2. Run `gcam-mvsdk-py doctor`: the SDK must load, CAP_NET_RAW must be effective (or run the
-   tests under `sudo -E`), rp_filter 0, cameras in the host NIC subnet.
+2. Run `gcam-mvsdk-py doctor`: the SDK must load, rp_filter 0, cameras in the host NIC subnet.
 3. `gcam-mvsdk-py list` must show the expected cameras.
 
 ## Step 2: run
@@ -25,9 +24,6 @@ cameras.
 GCAM_MVSDK_HW_EXPECT=sb00,sb01,sb02,sb03 .claude/skills/hardware-test/run_hw_tests.sh
 GCAM_MVSDK_HW_CAMERA=sb01 .claude/skills/hardware-test/run_hw_tests.sh -k grab
 ```
-
-Without capabilities: `sudo -E env "PATH=$PATH" .claude/skills/hardware-test/run_hw_tests.sh`
-(the script passes `-p no:cacheprovider` so no root-owned cache is written).
 
 Variables:
 
@@ -58,7 +54,7 @@ Variables:
 
 | Failure | Meaning |
 |---|---|
-| "no cameras discovered" | Privileges, rp_filter, firewall, or cabling: use the camera-discovery skill |
+| "no cameras discovered" | rp_filter, firewall, subnet, or cabling: use the camera-discovery skill |
 | Skip "every camera is in use" | Another process holds the cameras (Step 1) |
 | `MvTimeout` in the grab test | Packet size above the NIC MTU, rp_filter, firewall, or a trigger mode left on |
 | Shape mismatch | Resolution changed between reading and grabbing, or an ROI is active |

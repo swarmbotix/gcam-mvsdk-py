@@ -176,7 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--exposure-us", type=float, help="manual exposure time in microseconds")
     p.add_argument("--format", choices=FORMATS, default="auto", help="ISP output format (default: mono8 for mono sensors, else bgr8)")
 
-    sub.add_parser("doctor", help="check SDK presence, privileges, rp_filter, firewall, NIC subnets")
+    sub.add_parser("doctor", help="check SDK presence, rp_filter, firewall, NIC subnets")
     return parser
 
 
@@ -196,15 +196,10 @@ def _load(args: argparse.Namespace) -> Any:
 
 
 def _no_camera_hint() -> str:
-    from ._doctor import has_raw_socket_privilege
-
-    hint = "No cameras found. Check cable, power, and that the host NIC is on the same subnet."
-    if sys.platform.startswith("linux") and not has_raw_socket_privilege():
-        hint += (
-            "\nThis process is neither root nor holds CAP_NET_RAW, which GigE discovery needs."
-            "\nRun `%s doctor` for the exact fix." % PROG
-        )
-    return hint
+    return (
+        "No cameras found. Check cable, power, and that the host NIC is on the same subnet."
+        "\nRun `%s doctor` to check rp_filter, the firewall, and the camera subnets." % PROG
+    )
 
 
 def _safe(fn: Callable[[], Any]) -> Any:

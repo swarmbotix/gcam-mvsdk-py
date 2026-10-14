@@ -1,0 +1,5 @@
+# record.yaml: recording options for examples/live_view. In the window, r starts a recording,
+# c stops it early, q or Esc quits. Images go to <data_dir>/<YYYYMMDD_HHMMSS>_<camera>/0.png, 1.png, ...
+duration_s: 30   # a recording stops after this many seconds
+rate_hz: 5       # images saved per second; the camera keeps running at its own frame rate
+# data_dir: ~/.gcam-mvsdk/data   # default: <sdk home>/data ($GCAM_MVSDK_HOME, else ~/.gcam-mvsdk)

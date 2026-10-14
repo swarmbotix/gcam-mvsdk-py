@@ -29,3 +29,20 @@ def test_doctor_reports_missing_sdk_without_gcam_mvsdk_dir(isolated_env, quiet_h
     assert _doctor.run() == 1
     out = capsys.readouterr().out
     assert "MVSDK library not found" in out and "gcam-mvsdk-py setup" in out
+
+
+def test_doctor_has_no_privilege_section(isolated_env, quiet_host, capsys):
+    """GigE discovery needs no root or capability, so doctor must not report on privileges."""
+    _doctor.run()
+    out = capsys.readouterr().out
+    assert "Privileges" not in out
+    assert "effective for this interpreter" not in out
+    assert "sudo" not in out
+
+
+def test_no_camera_hint_points_at_doctor_not_privileges():
+    from gcam_mvsdk_py.cli import _no_camera_hint
+
+    hint = _no_camera_hint()
+    assert "doctor" in hint
+    assert "root" not in hint and "capabilit" not in hint

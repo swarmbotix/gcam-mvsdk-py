@@ -61,7 +61,7 @@ gcam-mvsdk-py doctor
 | `lib/x64` missing but `lib/arm` present (or similar) | Wrong architecture directory | `export GCAM_MVSDK_ARCH=<dir>` (e.g. `arm_softfp`) |
 | "wrong ELF class" | 32-bit interpreter with 64-bit library or the reverse | Use a matching interpreter, or set `GCAM_MVSDK_ARCH` |
 | "failed to map segment" or permission denied | SDK on a `noexec` mount | Install to a normal filesystem (`--dest`) |
-| Works as user, fails under `sudo` | `sudo` resets `HOME` and the environment | `sudo -E ...`, or set `GCAM_MVSDK_DIR` |
+| Works as user, fails under `sudo` | `sudo` resets `HOME` and the environment; root is not needed for any command | Run it as your own user, or set `GCAM_MVSDK_DIR` |
 | Works in the repo, fails elsewhere | Only `./vendor/` holds the SDK, which is cwd-relative | Install to the SDK home or set `GCAM_MVSDK_DIR` |
 | Installed under a custom `GCAM_MVSDK_HOME` | A different interpreter than install.bash's venv is used | Export `GCAM_MVSDK_HOME`, or use `~/.gcam-mvsdk/py-venv/bin/python3` |
 
